@@ -20,8 +20,8 @@ import (
 )
 
 var wsUpgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  4096,
+	WriteBufferSize: 8192,
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
@@ -44,7 +44,11 @@ func (h *Handlers) Routes(r chi.Router) {
 	r.Post("/api/v1/telemetry", h.handleIngest)
 	r.Get("/api/v1/telemetry/latest", h.handleLatest)
 	r.Get("/api/v1/telemetry/history", h.handleHistory)
-	r.Get("/ws/telemetry", h.handleWS)
+}
+
+// WSTelemetry — поток для дашборда; регистрировать без middleware.Timeout (долгое соединение).
+func (h *Handlers) WSTelemetry(w http.ResponseWriter, r *http.Request) {
+	h.handleWS(w, r)
 }
 
 func (h *Handlers) handleHealthz(w http.ResponseWriter, _ *http.Request) {

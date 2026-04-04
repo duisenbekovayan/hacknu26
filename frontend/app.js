@@ -27,6 +27,9 @@
   let ws = null;
   let reconnectTimer = null;
   let backoffMs = 1000;
+  let pollTimer = null;
+  /** последний применённый ts (дедуп WS + polling) */
+  let lastAppliedTs = "";
 
   const metricDefs = [
     ["speed_kmh", "Скорость", "км/ч"],
@@ -45,6 +48,13 @@
 
   function trainId() {
     return (trainInput.value || "LOC-DEMO-001").trim();
+  }
+
+  function sameTrain(msgId, selectedId) {
+    const a = (msgId == null ? "" : String(msgId)).trim();
+    const b = (selectedId == null ? "" : String(selectedId)).trim();
+    if (!a) return true;
+    return a === b;
   }
 
   function setConnected(ok, text) {
@@ -149,9 +159,20 @@
   }
 
   function applySample(s) {
+    if (s && s.ts) lastAppliedTs = s.ts;
     renderSample(s);
     pushBuffers(s);
-    updateCharts();
+    try {
+      updateCharts();
+    } catch (e) {
+      console.warn("chart update", e);
+    }
+  }
+
+  function msgTrainId(s) {
+    if (s == null) return "";
+    var id = s.train_id != null ? s.train_id : s.TrainID;
+    return id;
   }
 
   function fmtVal(key, val) {
@@ -278,6 +299,13 @@
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    if (ws) {
+      try {
+        ws.onclose = null;
+        ws.close();
+      } catch (_) {}
+      ws = null;
+    }
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const url = proto + "//" + location.host + "/ws/telemetry";
     setConnected(false, "подключение…");
@@ -297,21 +325,53 @@
       } catch (_) {}
     };
     ws.onmessage = function (ev) {
-      try {
-        const s = JSON.parse(ev.data);
-        if (s.train_id && s.train_id !== trainId()) return;
+      var p = typeof ev.data === "string" ? Promise.resolve(ev.data) : ev.data instanceof Blob ? ev.data.text() : Promise.resolve(String(ev.data));
+      p.then(function (raw) {
+        var s = JSON.parse(raw);
+        if (!sameTrain(msgTrainId(s), trainId())) return;
         applySample(s);
-      } catch (_) {}
+      }).catch(function (e) {
+        console.warn("ws message", e);
+      });
     };
+  }
+
+  function fetchOpts() {
+    return { cache: "no-store", headers: { Pragma: "no-cache" } };
+  }
+
+  function pollLatest() {
+    if (document.visibilityState !== "visible") return;
+    const tid = encodeURIComponent(trainId());
+    fetch("/api/v1/telemetry/latest?train_id=" + tid, fetchOpts())
+      .then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then(function (s) {
+        if (!s || !s.ts) return;
+        if (s.ts === lastAppliedTs) return;
+        applySample(s);
+      })
+      .catch(function () {});
+  }
+
+  function startLivePoll() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollLatest, 1000);
+    pollLatest();
   }
 
   async function loadHistory() {
     const tid = encodeURIComponent(trainId());
-    const res = await fetch("/api/v1/telemetry/history?train_id=" + tid + "&limit=300");
+    const res = await fetch(
+      "/api/v1/telemetry/history?train_id=" + tid + "&limit=300",
+      fetchOpts()
+    );
     if (!res.ok) return;
     const list = await res.json();
     if (!Array.isArray(list) || list.length === 0) {
-      const r2 = await fetch("/api/v1/telemetry/latest?train_id=" + tid);
+      const r2 = await fetch("/api/v1/telemetry/latest?train_id=" + tid, fetchOpts());
       if (r2.ok) {
         const s = await r2.json();
         applySample(s);
@@ -326,8 +386,14 @@
     asc.forEach(function (s) {
       pushBuffers(s);
     });
-    renderSample(asc[asc.length - 1]);
-    updateCharts();
+    const last = asc[asc.length - 1];
+    lastAppliedTs = last.ts || "";
+    renderSample(last);
+    try {
+      updateCharts();
+    } catch (e) {
+      console.warn("chart update", e);
+    }
   }
 
   trainInput.addEventListener("change", function () {
@@ -360,6 +426,7 @@
       .catch(function () {})
       .then(function () {
         connectWS();
+        startLivePoll();
       });
   });
 })();

@@ -91,3 +91,4 @@ go test ./... -count=1
 Интеграционный тест в `backend/internal/store` без Postgres пропускается. `SKIP_INTEGRATION=1 go test ./...` — без интеграции.
 
 Спецификация API: `openapi.yaml`
+Спецификация API: `openapi.yaml`.
