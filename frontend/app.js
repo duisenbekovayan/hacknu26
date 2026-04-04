@@ -345,11 +345,17 @@
   });
 
   document.addEventListener("DOMContentLoaded", function () {
-    if (typeof Chart === "undefined") {
-      console.error("Chart.js not loaded");
-      return;
+    if (typeof Chart !== "undefined") {
+      try {
+        initCharts();
+      } catch (e) {
+        console.warn("Chart.js init:", e);
+      }
+    } else {
+      console.warn(
+        "Chart.js не загрузился (проверьте интернет / CDN). Графики отключены; метрики и WebSocket работают."
+      );
     }
-    initCharts();
     loadHistory()
       .catch(function () {})
       .then(function () {

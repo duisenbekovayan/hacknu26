@@ -62,7 +62,10 @@ paths:
           description: Массив записей
   /ws/telemetry:
     get:
-      summary: WebSocket поток JSON записей (после ingest)
+      summary: WebSocket поток JSON записей к дашборду (после ingest)
+  /ws/ingest:
+    get:
+      summary: WebSocket приём телеметрии от симуляторов/края (текстовые кадры — один JSON = один Sample)
 
 components:
   schemas:
