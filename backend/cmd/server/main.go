@@ -16,6 +16,8 @@ import (
 
 	"hacknu/backend/internal/api"
 	"hacknu/backend/internal/db"
+	"hacknu/backend/internal/envfile"
+	"hacknu/backend/internal/llm"
 	"hacknu/backend/internal/rmqconsumer"
 	"hacknu/backend/internal/store"
 	"hacknu/backend/internal/ws"
@@ -23,6 +25,7 @@ import (
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	envfile.Load()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -41,7 +44,8 @@ func main() {
 
 	hub := ws.NewHub(log)
 	st := store.NewTelemetry(pool)
-	h := api.NewHandlers(log, st, hub)
+	aiSvc := llm.NewService(log)
+	h := api.NewHandlers(log, st, hub, aiSvc)
 
 	rmqURL := strings.TrimSpace(os.Getenv("RABBITMQ_URL"))
 	if os.Getenv("RABBITMQ_DISABLE") == "1" {

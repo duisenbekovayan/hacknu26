@@ -63,12 +63,84 @@ paths:
       responses:
         "200":
           description: Массив записей
+  /api/v1/ai/status:
+    get:
+      summary: Доступен ли ИИ-разбор (есть OPENAI_API_KEY на сервере)
+      responses:
+        "200":
+          description: JSON `{ "enabled": boolean }`
+  /api/v1/ai/analyze:
+    post:
+      summary: On-demand интерпретация снимка телеметрии (LLM)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIAnalyzeInput"
+      responses:
+        "200":
+          description: Структурированный разбор
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIAnalyzeOutput"
+        "400":
+          description: Неверный JSON
+        "503":
+          description: ИИ отключён (нет ключа)
+        "502":
+          description: Ошибка вызова модели
   /ws/telemetry:
     get:
       summary: WebSocket поток JSON записей к дашборду (после обработки на бэкенде)
+  /api/v1/config:
+    get:
+      summary: Публичные настройки фронта (ключ Google Maps для загрузки виджета)
+      responses:
+        "200":
+          description: JSON с полем `google_maps_api_key` (может быть пустым)
 
 components:
   schemas:
     TelemetrySample:
       type: object
       additionalProperties: true
+    AIAnalyzeInput:
+      type: object
+      properties:
+        train_id: { type: string }
+        timestamp: { type: string }
+        health_index: { type: number }
+        speed: { type: number }
+        fuel_level: { type: number }
+        engine_temp: { type: number }
+        brake_pressure: { type: number }
+        voltage: { type: number }
+        current: { type: number }
+        alerts:
+          type: array
+          items: { type: string }
+        recent_trend_notes:
+          type: array
+          items: { type: string }
+        mode:
+          type: string
+          description: empty или «actions» (акцент на рекомендациях)
+    AIAnalyzeOutput:
+      type: object
+      properties:
+        summary: { type: string }
+        severity:
+          type: string
+          enum: [normal, warning, critical]
+        probable_causes:
+          type: array
+          items: { type: string }
+        recommendations:
+          type: array
+          items: { type: string }
+        affected_metrics:
+          type: array
+          items: { type: string }
+        next_risk: { type: string }

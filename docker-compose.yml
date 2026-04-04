@@ -23,7 +23,8 @@ services:
       POSTGRES_PASSWORD: hacknu
       POSTGRES_DB: locomotive
     ports:
-      - "5432:5432"
+      # Host 5433 avoids clash with a local PostgreSQL install bound to 5432 (common on dev machines).
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

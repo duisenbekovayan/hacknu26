@@ -9,5 +9,5 @@ test:
 # Если локально нет Go: поднять `make up`, затем (macOS/Windows Docker Desktop):
 docker-test:
 	docker run --rm -v "$$(pwd)":/src -w /src \
-		-e DATABASE_URL="postgres://hacknu:hacknu@host.docker.internal:5432/locomotive?sslmode=disable" \
+		-e DATABASE_URL="postgres://hacknu:hacknu@host.docker.internal:5433/locomotive?sslmode=disable" \
 		golang:1.22-bookworm go test ./... -count=1

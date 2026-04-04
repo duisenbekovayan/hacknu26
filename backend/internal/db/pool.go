@@ -13,7 +13,8 @@ import (
 func NewPool(ctx context.Context) (*pgxpool.Pool, error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://hacknu:hacknu@localhost:5432/locomotive?sslmode=disable"
+		// Use 127.0.0.1 (not "localhost") so Windows resolves to IPv4 Docker Desktop, not [::1] / WSL relay.
+		dsn = "postgres://hacknu:hacknu@127.0.0.1:5433/locomotive?sslmode=disable"
 	}
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {

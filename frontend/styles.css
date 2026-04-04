@@ -184,6 +184,148 @@ body {
   }
 }
 
+/* ИИ — под шапкой, на всю ширину */
+.ai-block-top {
+  margin-bottom: 1rem;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.12);
+}
+
+.ai-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.ai-head-text {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.ai-head-text .card-title {
+  margin-bottom: 0.25rem;
+}
+
+.ai-head .ai-actions {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  align-self: center;
+}
+
+@media (max-width: 560px) {
+  .ai-head .ai-actions {
+    width: 100%;
+  }
+  .ai-head .ai-actions .btn {
+    flex: 1 1 auto;
+  }
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn.primary:disabled,
+.btn.ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ai-block-top .ai-panel {
+  margin-top: 0.75rem;
+}
+
+.ai-panel {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.ai-severity {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.ai-severity[data-sev="normal"] {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--ok);
+}
+
+.ai-severity[data-sev="warning"] {
+  background: rgba(210, 153, 34, 0.2);
+  color: var(--warn);
+}
+
+.ai-severity[data-sev="critical"] {
+  background: rgba(248, 81, 73, 0.18);
+  color: var(--bad);
+}
+
+.ai-summary {
+  margin: 0 0 0.75rem;
+  line-height: 1.45;
+  font-size: 0.95rem;
+}
+
+.ai-cols {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 640px) {
+  .ai-cols {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.ai-h {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.ai-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.ai-metrics {
+  margin: 0.75rem 0 0;
+}
+
+.ai-risk {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -321,7 +463,13 @@ body {
   height: 140px;
 }
 
-/* Map */
+/* Map / схема участка */
+.map-intro {
+  margin: 0 0 0.65rem;
+  line-height: 1.35;
+  font-size: 0.8rem;
+}
+
 .map-svg svg {
   width: 100%;
   height: auto;
@@ -341,16 +489,168 @@ body {
   stop-color: var(--accent);
 }
 
+.map-zone {
+  opacity: 0.92;
+}
+
+.map-zone--xfast {
+  fill: rgba(63, 185, 80, 0.22);
+}
+
+.map-zone--fast {
+  fill: rgba(88, 166, 255, 0.2);
+}
+
+.map-zone--med {
+  fill: rgba(210, 153, 34, 0.22);
+}
+
+.map-zone--slow {
+  fill: rgba(248, 81, 73, 0.18);
+}
+
+.map-rail-line {
+  stroke: var(--text);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  opacity: 0.9;
+}
+
+.map-sleeper {
+  stroke: var(--border);
+  stroke-width: 1.1;
+  opacity: 0.45;
+}
+
+.map-sleeper--10 {
+  stroke-width: 1.6;
+  opacity: 0.65;
+}
+
+.map-node {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.map-node--major {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.map-np-name {
+  fill: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.map-np-km {
+  fill: var(--muted);
+  font-size: 8.5px;
+}
+
+.map-seg-km {
+  fill: var(--bad);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.map-tick {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.85;
+}
+
+.map-tick-km {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.map-st-label {
+  fill: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.map-restr {
+  fill: var(--warn);
+  font-size: 9px;
+}
+
 .map-dot {
   fill: var(--accent);
   stroke: var(--surface);
   stroke-width: 3;
-  transition: cx 0.4s ease;
+  transition: cx 0.35s ease, cy 0.35s ease;
+}
+
+.map-dot.map-dot--warn {
+  fill: var(--bad);
 }
 
 .map-caption {
-  fill: var(--muted);
+  fill: var(--text);
   font-size: 11px;
+}
+
+.map-caption.map-caption--warn {
+  fill: var(--bad);
+  font-weight: 600;
+}
+
+.map-subcaption {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  margin-top: 0.6rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.map-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+
+.map-legend-note {
+  flex-basis: 100%;
+  opacity: 0.9;
+  font-size: 0.68rem;
+}
+
+.map-gmap-title {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+#gmapHint {
+  margin: 0 0 0.5rem;
+}
+
+.gmap-wrap {
+  width: 100%;
+  min-height: 240px;
+  height: min(42vh, 320px);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg);
 }
 
 /* Motors */
