@@ -1,0 +1,71 @@
+openapi: 3.0.3
+info:
+  title: Locomotive Digital Twin API
+  version: 0.1.0
+  description: Мок-API телеметрии (хакатон). Секреты только через переменные окружения.
+
+servers:
+  - url: http://localhost:8080
+    description: Локально
+
+paths:
+  /healthz:
+    get:
+      summary: Проверка живости сервиса
+      responses:
+        "200":
+          description: OK
+  /api/v1/telemetry:
+    post:
+      summary: Приём одной записи телеметрии
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelemetrySample"
+      responses:
+        "201":
+          description: Сохранено и разослано по WebSocket
+        "400":
+          description: Ошибка валидации
+  /api/v1/telemetry/latest:
+    get:
+      summary: Последняя запись по поезду
+      parameters:
+        - in: query
+          name: train_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Объект телеметрии
+        "404":
+          description: Нет данных
+  /api/v1/telemetry/history:
+    get:
+      summary: История (последние N, новые сверху)
+      parameters:
+        - in: query
+          name: train_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 500
+      responses:
+        "200":
+          description: Массив записей
+  /ws/telemetry:
+    get:
+      summary: WebSocket поток JSON записей (после ingest)
+
+components:
+  schemas:
+    TelemetrySample:
+      type: object
+      additionalProperties: true

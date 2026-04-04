@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Кабина — цифровой двойник</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="app" data-theme="dark">
+    <header class="top">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">◆</span>
+        <div>
+          <h1>Цифровой двойник локомотива</h1>
+          <p class="sub">Телеметрия в реальном времени · индекс здоровья</p>
+        </div>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>Поезд</span>
+          <input id="trainId" type="text" value="LOC-DEMO-001" autocomplete="off" title="train_id для API" />
+        </label>
+        <button id="btnTheme" type="button" class="btn ghost" title="Тема">Тема</button>
+        <span id="connPill" class="pill warn" role="status">нет связи</span>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card health" aria-labelledby="health-title">
+        <h2 id="health-title" class="sr-only">Индекс здоровья</h2>
+        <div class="health-ring" id="healthRing" data-level="norm">
+          <div class="health-inner">
+            <span class="health-value" id="healthValue">—</span>
+            <span class="health-grade" id="healthGrade">—</span>
+          </div>
+        </div>
+        <p class="health-label" id="healthCategory">ожидание данных…</p>
+        <div class="factors" id="factors">
+          <p class="muted small">Факторы появятся после расчёта индекса</p>
+        </div>
+      </section>
+
+      <section class="card metrics" aria-label="Ключевые параметры">
+        <h2 class="card-title">Параметры</h2>
+        <div class="metric-grid" id="metrics"></div>
+      </section>
+
+      <section class="card chart-block">
+        <h2 class="card-title">Тренды <span class="muted small">(последние точки)</span></h2>
+        <div class="charts">
+          <div class="chart-wrap"><canvas id="chartSpeed" height="120"></canvas></div>
+          <div class="chart-wrap"><canvas id="chartTemp" height="120"></canvas></div>
+          <div class="chart-wrap"><canvas id="chartHealth" height="120"></canvas></div>
+        </div>
+      </section>
+
+      <section class="card map-block" aria-label="Участок пути">
+        <h2 class="card-title">Участок пути <span class="muted small">(схема)</span></h2>
+        <div class="map-svg" role="img" aria-label="Схема маршрута и положение состава">
+          <svg viewBox="0 0 400 120" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="rail" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" class="stop-a" />
+                <stop offset="100%" class="stop-b" />
+              </linearGradient>
+            </defs>
+            <rect class="map-bg" x="0" y="0" width="400" height="120" rx="8" />
+            <line x1="32" y1="60" x2="368" y2="60" stroke="url(#rail)" stroke-width="6" stroke-linecap="round" />
+            <circle id="mapDot" cx="200" cy="60" r="10" class="map-dot" />
+            <text x="200" y="100" text-anchor="middle" class="map-caption" id="mapCaption">—</text>
+          </svg>
+        </div>
+      </section>
+
+      <section class="card motors" aria-label="Тяговые двигатели">
+        <h2 class="card-title">ТЭД (6 осей)</h2>
+        <div class="motor-row" id="motors"></div>
+      </section>
+
+      <section class="card alerts" aria-label="Алерты">
+        <h2 class="card-title">Алерты</h2>
+        <ul class="alert-list" id="alerts"><li class="muted">нет активных</li></ul>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span id="lastTs" class="muted small">последнее обновление: —</span>
+      <span class="muted small">WebSocket <code>/ws/telemetry</code> · REST <code>/api/v1</code></span>
+    </footer>
+  </div>
+</body>
+</html>
