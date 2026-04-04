@@ -1,3 +1,4 @@
+# Поток: simulator → RabbitMQ telemetry.raw → normalizer → telemetry.normalized → backend (фронт внутри backend) → браузер
 services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -32,6 +33,54 @@ services:
       interval: 3s
       timeout: 3s
       retries: 10
+
+  normalizer:
+    build:
+      context: .
+      dockerfile: normalizer/Dockerfile
+    environment:
+      RABBITMQ_URL: amqp://hacknu:hacknu@rabbitmq:5672/
+      NORMALIZER_ENABLE_SMOOTHING: "true"
+      NORMALIZER_ENABLE_DEDUP: "true"
+      NORMALIZER_DEDUP_WINDOW_MS: "1500"
+      NORMALIZER_STATE_TTL_MIN: "15"
+      NORMALIZER_BUFFER_SIZE: "5"
+      NORMALIZER_EMA_ALPHA: "0.4"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  simulator:
+    build:
+      context: .
+      dockerfile: simulators/Dockerfile
+    environment:
+      RABBITMQ_URL: amqp://hacknu:hacknu@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgres://hacknu:hacknu@postgres:5432/locomotive?sslmode=disable
+      RABBITMQ_URL: amqp://hacknu:hacknu@rabbitmq:5672/
+      HTTP_ADDR: :8080
+      FRONTEND_DIR: /app/frontend
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      normalizer:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
 
 volumes:
   pgdata:
