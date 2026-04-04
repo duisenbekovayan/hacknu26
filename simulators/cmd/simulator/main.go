@@ -71,7 +71,7 @@ func runAMQPPublish(amqpURL string, interval time.Duration, train string, g *syn
 			if err != nil {
 				return err
 			}
-			return rabbitmq.PublishSample(ch, body)
+			return rabbitmq.PublishRawSample(ch, body)
 		}
 
 		if err := send(); err != nil {
