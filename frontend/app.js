@@ -1,6 +1,6 @@
-/* global Chart */
+/* global Chart, ChartZoom */
 (function () {
-  const MAX_POINTS = 240;
+  const MAX_POINTS = 2000;
   const trainInput = document.getElementById("trainId");
   const connPill = document.getElementById("connPill");
   const healthValue = document.getElementById("healthValue");
@@ -11,6 +11,7 @@
   const metricsEl = document.getElementById("metrics");
   const motorsEl = document.getElementById("motors");
   const alertsEl = document.getElementById("alerts");
+  const recommendationsEl = document.getElementById("recommendations");
   const lastTs = document.getElementById("lastTs");
   const mapDot = document.getElementById("mapDot");
   const mapCaption = document.getElementById("mapCaption");
@@ -30,6 +31,12 @@
 
   let lastSample = null;
   let aiEnabled = false;
+  const replayMinutesEl = document.getElementById("replayMinutes");
+  const btnLoadReplay = document.getElementById("btnLoadReplay");
+  const replayScrubWrap = document.getElementById("replayScrubWrap");
+  const replaySlider = document.getElementById("replaySlider");
+  const replayTimeLabel = document.getElementById("replayTimeLabel");
+  const btnReplayPlay = document.getElementById("btnReplayPlay");
 
   const buffers = {
     labels: [],
@@ -43,8 +50,12 @@
   let reconnectTimer = null;
   let backoffMs = 1000;
   let pollTimer = null;
-  /** последний применённый ts (дедуп WS + polling) */
   let lastAppliedTs = "";
+  let replayMode = false;
+  let replaySamples = [];
+  let replayIndex = 0;
+  let playTimer = null;
+  let playing = false;
 
   const metricDefs = [
     ["speed_kmh", "Скорость", "км/ч"],
@@ -61,8 +72,23 @@
     ["mileage_km", "Пробег (уч.)", "км"],
   ];
 
+  const factorActions = [
+    { re: /перегрев ОЖ/i, text: "Снизить нагрузку двигателя; проверить охлаждение и уровень ОЖ." },
+    { re: /низкое давление масла/i, text: "Не наращивать тягу; проверить уровень и давление масла по регламенту." },
+    { re: /напряжение АКБ/i, text: "Проверить заряд АКБ и цепи генератора/выпрямителя." },
+    { re: /ТЭД\d+/i, text: "Проверить вентиляцию и нагрузку на тяговые двигатели; избегать длительной работы на пределе." },
+    { re: /низкое давление ГР/i, text: "Проверить питание сжатым воздухом и тормозную магистраль." },
+    { re: /^алерт\s+/i, text: "Свериться с кодом алерта в инструкции; при необходимости снизить ход." },
+  ];
+
   function trainId() {
     return (trainInput.value || "LOC-DEMO-001").trim();
+  }
+
+  function windowMinutes() {
+    const v = parseInt(replayMinutesEl && replayMinutesEl.value, 10);
+    if (v === 5 || v === 10 || v === 15) return v;
+    return 15;
   }
 
   function sameTrain(msgId, selectedId) {
@@ -95,7 +121,48 @@
     return String(v);
   }
 
-  function renderSample(s) {
+  function recommendationsFor(s) {
+    const out = [];
+    const hi = typeof s.health_index === "number" ? s.health_index : 0;
+    (s.health_top_factors || []).forEach(function (f) {
+      const name = f.factor || "";
+      for (let i = 0; i < factorActions.length; i++) {
+        if (factorActions[i].re.test(name)) {
+          out.push(factorActions[i].text);
+          return;
+        }
+      }
+    });
+    (s.alerts || []).forEach(function (a) {
+      const sev = (a.severity || "").toLowerCase();
+      const code = a.code ? String(a.code) : "";
+      if (sev === "crit") {
+        out.push("Критический сигнал " + code + ": быть готовым к остановке или снижению хода по регламенту.");
+      } else if (sev === "warn") {
+        out.push("Предупреждение " + code + ": проверить узел до усугубления; зафиксировать событие.");
+      }
+    });
+    if (out.length === 0) {
+      if (hi >= 85) {
+        out.push("Состояние в норме; продолжайте мониторинг ключевых параметров.");
+      } else {
+        out.push("Удерживайте параметры из списка факторов под контролем; при падении индекса — снижать нагрузку.");
+      }
+    }
+    return [...new Set(out)];
+  }
+
+  function renderRecommendations(s) {
+    recommendationsEl.innerHTML = "";
+    const items = recommendationsFor(s);
+    items.forEach(function (text) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      recommendationsEl.appendChild(li);
+    });
+  }
+
+  function renderDashboard(s) {
     const hi = typeof s.health_index === "number" ? s.health_index : 0;
     healthValue.textContent = fmt(hi, 0);
     healthGrade.textContent = s.health_grade || "—";
@@ -108,7 +175,7 @@
     if (tops.length === 0) {
       factorsEl.innerHTML = '<p class="muted small">Нет активных штрафов</p>';
     } else {
-      tops.forEach((f) => {
+      tops.forEach(function (f) {
         const row = document.createElement("div");
         row.className = "factor-row";
         row.innerHTML =
@@ -122,7 +189,10 @@
     }
 
     metricsEl.innerHTML = "";
-    metricDefs.forEach(([key, label, unit]) => {
+    metricDefs.forEach(function (def) {
+      const key = def[0];
+      const label = def[1];
+      const unit = def[2];
       let val = s[key];
       if (key === "traction_current_a") val = s.traction_current_a;
       const m = document.createElement("div");
@@ -139,7 +209,7 @@
     });
 
     motorsEl.innerHTML = "";
-    (s.traction_motor_temp_c || []).forEach((t, i) => {
+    (s.traction_motor_temp_c || []).forEach(function (t, i) {
       const div = document.createElement("div");
       div.className = "motor";
       if (t > 115) div.classList.add("crit");
@@ -158,7 +228,7 @@
     if (alerts.length === 0) {
       alertsEl.innerHTML = '<li class="muted">нет активных</li>';
     } else {
-      alerts.forEach((a) => {
+      alerts.forEach(function (a) {
         const li = document.createElement("li");
         const sev = (a.severity || "info").toLowerCase();
         li.className = sev === "crit" ? "crit" : sev === "warn" ? "warn" : "info";
@@ -167,8 +237,14 @@
       });
     }
 
-    lastTs.textContent =
-      "последнее обновление: " + (s.ts || new Date().toISOString());
+    renderRecommendations(s);
+
+    if (replayMode) {
+      lastTs.textContent =
+        "replay: " + (s.ts || "—") + " · кадр " + (replayIndex + 1) + " / " + replaySamples.length;
+    } else {
+      lastTs.textContent = "последнее обновление: " + (s.ts || new Date().toISOString());
+    }
 
     updateMap(s);
   }
@@ -177,6 +253,7 @@
     if (s && s.ts) lastAppliedTs = s.ts;
     lastSample = s;
     renderSample(s);
+    renderDashboard(s);
     pushBuffers(s);
     try {
       updateCharts();
@@ -185,9 +262,19 @@
     }
   }
 
+  function applyReplayFrame(i) {
+    if (!replaySamples.length) return;
+    replayIndex = Math.max(0, Math.min(i, replaySamples.length - 1));
+    const s = replaySamples[replayIndex];
+    renderDashboard(s);
+    replaySlider.value = String(replayIndex);
+    replayTimeLabel.textContent =
+      (s.ts || "") + " · " + (replayIndex + 1) + "/" + replaySamples.length;
+  }
+
   function msgTrainId(s) {
     if (s == null) return "";
-    var id = s.train_id != null ? s.train_id : s.TrainID;
+    const id = s.train_id != null ? s.train_id : s.TrainID;
     return id;
   }
 
@@ -571,6 +658,13 @@
     }
   }
 
+  function clearBuffers() {
+    buffers.labels = [];
+    buffers.speed = [];
+    buffers.coolant = [];
+    buffers.health = [];
+  }
+
   function pushBuffers(s) {
     const label = new Date(s.ts || Date.now()).toLocaleTimeString();
     buffers.labels.push(label);
@@ -585,20 +679,40 @@
     }
   }
 
+  function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
   function chartOpts(title) {
-    const grid = getComputedStyle(document.documentElement).getPropertyValue("--border").trim();
-    const text = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+    const grid = cssVar("--border", "#30363d");
+    const text = cssVar("--muted", "#8b949e");
+    const plugins = {
+      legend: { display: false },
+      title: { display: true, text: title, color: text, font: { size: 11 } },
+    };
+    if (typeof ChartZoom !== "undefined") {
+      plugins.zoom = {
+        pan: { enabled: true, mode: "x", modifierKey: null },
+        zoom: {
+          wheel: { enabled: true },
+          pinch: { enabled: true },
+          mode: "x",
+        },
+        limits: {
+          x: { min: "original", max: "original", minRange: 2 },
+        },
+      };
+    }
     return {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        title: { display: true, text: title, color: text || "#888", font: { size: 11 } },
-      },
+      interaction: { mode: "index", intersect: false },
+      plugins: plugins,
       scales: {
         x: {
           display: buffers.labels.length > 2,
-          ticks: { maxTicksLimit: 8, color: text },
+          ticks: { maxTicksLimit: 12, color: text },
           grid: { color: grid },
         },
         y: {
@@ -611,9 +725,16 @@
   }
 
   function initCharts() {
-    const accent = "#58a6ff";
-    const ok = "#3fb950";
-    const warn = "#f0883e";
+    if (typeof ChartZoom !== "undefined") {
+      try {
+        Chart.register(ChartZoom);
+      } catch (e) {
+        console.warn("chartjs-plugin-zoom register", e);
+      }
+    }
+    const accent = cssVar("--accent", "#58a6ff");
+    const ok = cssVar("--ok", "#3fb950");
+    const warn = cssVar("--warn", "#f0883e");
 
     charts.speed = new Chart(document.getElementById("chartSpeed"), {
       type: "line",
@@ -641,14 +762,35 @@
     });
   }
 
+  function syncChartTheme() {
+    if (!charts.speed) return;
+    const accent = cssVar("--accent", "#58a6ff");
+    const ok = cssVar("--ok", "#3fb950");
+    const warn = cssVar("--warn", "#f0883e");
+    const grid = cssVar("--border", "#30363d");
+    const text = cssVar("--muted", "#8b949e");
+    charts.speed.data.datasets[0].borderColor = accent;
+    charts.temp.data.datasets[0].borderColor = warn;
+    charts.health.data.datasets[0].borderColor = ok;
+    ["speed", "temp", "health"].forEach(function (k) {
+      const ch = charts[k];
+      ch.options.plugins.title.color = text;
+      ch.options.scales.x.ticks.color = text;
+      ch.options.scales.y.ticks.color = text;
+      ch.options.scales.x.grid.color = grid;
+      ch.options.scales.y.grid.color = grid;
+      ch.update("none");
+    });
+  }
+
   function updateCharts() {
     if (!charts.speed) return;
-    ["speed", "temp", "health"].forEach((k, i) => {
-      const ds =
-        i === 0 ? buffers.speed : i === 1 ? buffers.coolant : buffers.health;
+    ["speed", "temp", "health"].forEach(function (k, i) {
+      const ds = i === 0 ? buffers.speed : i === 1 ? buffers.coolant : buffers.health;
       const ch = charts[k];
       ch.data.labels = buffers.labels.slice();
       ch.data.datasets[0].data = ds.slice();
+      ch.options.scales.x.display = buffers.labels.length > 2;
       ch.update("none");
     });
   }
@@ -671,12 +813,14 @@
     ws = new WebSocket(url);
     ws.onopen = function () {
       backoffMs = 1000;
-      setConnected(true, "онлайн");
+      if (!replayMode) setConnected(true, "онлайн");
     };
     ws.onclose = function () {
-      setConnected(false, "нет связи · переподключение…");
-      reconnectTimer = setTimeout(connectWS, backoffMs);
-      backoffMs = Math.min(backoffMs * 2, 30000);
+      if (!replayMode) {
+        setConnected(false, "нет связи · переподключение…");
+        reconnectTimer = setTimeout(connectWS, backoffMs);
+        backoffMs = Math.min(backoffMs * 2, 30000);
+      }
     };
     ws.onerror = function () {
       try {
@@ -684,9 +828,15 @@
       } catch (_) {}
     };
     ws.onmessage = function (ev) {
-      var p = typeof ev.data === "string" ? Promise.resolve(ev.data) : ev.data instanceof Blob ? ev.data.text() : Promise.resolve(String(ev.data));
+      if (replayMode) return;
+      const p =
+        typeof ev.data === "string"
+          ? Promise.resolve(ev.data)
+          : ev.data instanceof Blob
+            ? ev.data.text()
+            : Promise.resolve(String(ev.data));
       p.then(function (raw) {
-        var s = JSON.parse(raw);
+        const s = JSON.parse(raw);
         if (!sameTrain(msgTrainId(s), trainId())) return;
         applySample(s);
       }).catch(function (e) {
@@ -699,7 +849,15 @@
     return { cache: "no-store", headers: { Pragma: "no-cache" } };
   }
 
+  function stopLivePoll() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
   function pollLatest() {
+    if (replayMode) return;
     if (document.visibilityState !== "visible") return;
     const tid = encodeURIComponent(trainId());
     fetch("/api/v1/telemetry/latest?train_id=" + tid, fetchOpts())
@@ -716,19 +874,30 @@
   }
 
   function startLivePoll() {
-    if (pollTimer) clearInterval(pollTimer);
+    stopLivePoll();
     pollTimer = setInterval(pollLatest, 1000);
     pollLatest();
   }
 
-  async function loadHistory() {
+  function stopReplayPlay() {
+    playing = false;
+    btnReplayPlay.textContent = "▶";
+    if (playTimer) {
+      clearInterval(playTimer);
+      playTimer = null;
+    }
+  }
+
+  async function loadHistoryLive() {
     const tid = encodeURIComponent(trainId());
+    const min = windowMinutes();
     const res = await fetch(
-      "/api/v1/telemetry/history?train_id=" + tid + "&limit=300",
+      "/api/v1/telemetry/history?train_id=" + tid + "&minutes=" + min,
       fetchOpts()
     );
     if (!res.ok) return;
     const list = await res.json();
+    clearBuffers();
     if (!Array.isArray(list) || list.length === 0) {
       const r2 = await fetch("/api/v1/telemetry/latest?train_id=" + tid, fetchOpts());
       if (r2.ok) {
@@ -737,17 +906,12 @@
       }
       return;
     }
-    const asc = list.slice().reverse();
-    buffers.labels = [];
-    buffers.speed = [];
-    buffers.coolant = [];
-    buffers.health = [];
-    asc.forEach(function (s) {
+    list.forEach(function (s) {
       pushBuffers(s);
     });
-    const last = asc[asc.length - 1];
+    const last = list[list.length - 1];
     lastAppliedTs = last.ts || "";
-    renderSample(last);
+    renderDashboard(last);
     try {
       updateCharts();
     } catch (e) {
@@ -755,12 +919,117 @@
     }
   }
 
+  async function loadReplayWindow() {
+    const tid = encodeURIComponent(trainId());
+    const min = windowMinutes();
+    const res = await fetch(
+      "/api/v1/telemetry/history?train_id=" + tid + "&minutes=" + min,
+      fetchOpts()
+    );
+    if (!res.ok) {
+      replayTimeLabel.textContent = "ошибка загрузки";
+      return;
+    }
+    const list = await res.json();
+    if (!Array.isArray(list) || list.length === 0) {
+      replaySamples = [];
+      replayScrubWrap.hidden = true;
+      replayTimeLabel.textContent = "нет данных за окно";
+      return;
+    }
+    replayMode = true;
+    stopReplayPlay();
+    stopLivePoll();
+    setConnected(false, "replay");
+    try {
+      if (ws) ws.close();
+    } catch (_) {}
+    ws = null;
+
+    replaySamples = list;
+    clearBuffers();
+    list.forEach(function (s) {
+      pushBuffers(s);
+    });
+    replayIndex = list.length - 1;
+    replaySlider.max = String(Math.max(0, list.length - 1));
+    replaySlider.value = String(replayIndex);
+    replayScrubWrap.hidden = false;
+    try {
+      updateCharts();
+    } catch (e) {
+      console.warn("chart update", e);
+    }
+    applyReplayFrame(replayIndex);
+  }
+
+  function exitReplay() {
+    replayMode = false;
+    stopReplayPlay();
+    replayScrubWrap.hidden = true;
+    replaySamples = [];
+    const liveRadio = document.querySelector('input[name="viewMode"][value="live"]');
+    if (liveRadio) liveRadio.checked = true;
+    startLivePoll();
+    connectWS();
+    loadHistoryLive().catch(function () {});
+  }
+
+  function setViewMode(mode) {
+    if (mode === "live") {
+      exitReplay();
+    } else {
+      btnLoadReplay.focus();
+    }
+  }
+
+  document.querySelectorAll('input[name="viewMode"]').forEach(function (el) {
+    el.addEventListener("change", function () {
+      if (el.value === "live" && el.checked) setViewMode("live");
+      if (el.value === "replay" && el.checked) setViewMode("replay");
+    });
+  });
+
+  replaySlider.addEventListener("input", function () {
+    if (!replayMode) return;
+    stopReplayPlay();
+    applyReplayFrame(parseInt(replaySlider.value, 10) || 0);
+  });
+
+  btnLoadReplay.addEventListener("click", function () {
+    document.querySelector('input[name="viewMode"][value="replay"]').checked = true;
+    loadReplayWindow().catch(function (e) {
+      console.warn(e);
+    });
+  });
+
+  btnReplayPlay.addEventListener("click", function () {
+    if (!replayMode || replaySamples.length < 2) return;
+    if (playing) {
+      stopReplayPlay();
+      return;
+    }
+    playing = true;
+    btnReplayPlay.textContent = "■";
+    playTimer = setInterval(function () {
+      if (replayIndex >= replaySamples.length - 1) {
+        stopReplayPlay();
+        return;
+      }
+      applyReplayFrame(replayIndex + 1);
+    }, 250);
+  });
+
   trainInput.addEventListener("change", function () {
-    buffers.labels = [];
-    buffers.speed = [];
-    buffers.coolant = [];
-    buffers.health = [];
-    loadHistory().catch(function () {});
+    clearBuffers();
+    document.querySelector('input[name="viewMode"][value="live"]').checked = true;
+    exitReplay();
+  });
+
+  replayMinutesEl.addEventListener("change", function () {
+    if (!replayMode) {
+      loadHistoryLive().catch(function () {});
+    }
   });
 
   function buildTrendNotes() {
@@ -956,7 +1225,7 @@
         "Chart.js не загрузился (проверьте интернет / CDN). Графики отключены; метрики и WebSocket работают."
       );
     }
-    loadHistory()
+    loadHistoryLive()
       .catch(function () {})
       .then(function () {
         refreshAIStatus().catch(function () {});

@@ -136,8 +136,27 @@ func (h *Handlers) handleHistory(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "train_id required", http.StatusBadRequest)
 		return
 	}
+
+	ctx := r.Context()
+	minutes, _ := strconv.Atoi(r.URL.Query().Get("minutes"))
+	if minutes > 0 {
+		if minutes > 120 {
+			minutes = 120
+		}
+		since := time.Now().UTC().Add(-time.Duration(minutes) * time.Minute)
+		list, err := h.store.HistoryRange(ctx, trainID, since, 5000)
+		if err != nil {
+			h.log.Error("history", "err", err)
+			http.Error(w, "storage error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(list)
+		return
+	}
+
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	list, err := h.store.History(r.Context(), trainID, limit)
+	list, err := h.store.History(ctx, trainID, limit)
 	if err != nil {
 		h.log.Error("history", "err", err)
 		http.Error(w, "storage error", http.StatusInternalServerError)

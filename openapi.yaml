@@ -48,7 +48,10 @@ paths:
           description: Нет данных
   /api/v1/telemetry/history:
     get:
-      summary: История (последние N, новые сверху)
+      summary: История по поезду
+      description: |
+        Без `minutes`: последние N записей, **новые сверху** (как раньше).
+        С `minutes`: все точки за последние M минут, **от старых к новым** (удобно для графиков и replay).
       parameters:
         - in: query
           name: train_id
@@ -56,7 +59,15 @@ paths:
           schema:
             type: string
         - in: query
+          name: minutes
+          description: Если задан (1–120), выборка по времени; иначе используется limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 120
+        - in: query
           name: limit
+          description: Используется только без `minutes`
           schema:
             type: integer
             default: 500

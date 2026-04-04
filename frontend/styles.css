@@ -1,4 +1,7 @@
-:root {
+/* Тема на <html>: иначе body { color: var(--text) } берёт --text с :root и в светлом режиме текст остаётся «белым» */
+:root,
+html[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0d1117;
   --surface: #161b22;
   --border: #30363d;
@@ -12,14 +15,54 @@
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
-[data-theme="light"] {
+html[data-theme="light"] {
+  color-scheme: light;
   --bg: #f6f8fa;
   --surface: #ffffff;
   --border: #d0d7de;
   --text: #1f2328;
-  --muted: #656d76;
+  --muted: #57606a;
   --accent: #0969da;
   --ring-track: #eaeef2;
+}
+
+html[data-theme="light"] .brand h1,
+html[data-theme="light"] .sub,
+html[data-theme="light"] .card-title,
+html[data-theme="light"] .health-value,
+html[data-theme="light"] .health-label,
+html[data-theme="light"] .factor-row,
+html[data-theme="light"] .metric,
+html[data-theme="light"] .metric .v,
+html[data-theme="light"] .motor .t,
+html[data-theme="light"] .replay-toolbar,
+html[data-theme="light"] .replay-hint,
+html[data-theme="light"] .scrub-label,
+html[data-theme="light"] .replay-time,
+html[data-theme="light"] .rec-list li {
+  color: var(--text);
+}
+
+html[data-theme="light"] .health-grade {
+  color: var(--muted);
+}
+
+html[data-theme="light"] .metric .k {
+  color: #24292f;
+}
+
+html[data-theme="light"] .field span,
+html[data-theme="light"] .field input {
+  color: var(--text);
+}
+
+html[data-theme="light"] .field span {
+  color: #24292f;
+}
+
+html[data-theme="light"] code {
+  color: var(--text);
+  background: #eaeef2;
 }
 
 *,
@@ -50,6 +93,7 @@ body {
   max-width: 1280px;
   margin: 0 auto;
   padding: 1.25rem 1rem 2rem;
+  color: var(--text);
 }
 
 .top {
@@ -180,6 +224,10 @@ body {
   }
 
   .alerts {
+    grid-column: 2;
+  }
+
+  .recommendations {
     grid-column: 2;
   }
 }
@@ -460,7 +508,101 @@ body {
 
 .chart-wrap {
   position: relative;
-  height: 140px;
+  height: 160px;
+}
+
+/* Replay */
+.replay-toolbar {
+  margin: -0.25rem 0 0.85rem;
+  font-size: 0.85rem;
+}
+
+.replay-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.replay-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.replay-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.replay-opt input {
+  accent-color: var(--accent);
+}
+
+#replayMinutes {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.replay-hint {
+  margin: 0.5rem 0 0;
+  line-height: 1.4;
+}
+
+.replay-scrub {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.scrub-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+#replaySlider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.replay-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.replay-time {
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+/* Рекомендации */
+.rec-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.rec-list li {
+  margin-bottom: 0.45rem;
+  color: var(--text);
+}
+
+.rec-list li.muted {
+  color: var(--muted);
+  list-style: none;
+  margin-left: -1.1rem;
 }
 
 /* Map / схема участка */
