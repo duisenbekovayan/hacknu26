@@ -5,21 +5,26 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"hacknu/backend/internal/rmqnormalizer"
+	"hacknu/normalizer/internal/config"
+	"hacknu/normalizer/internal/consumer"
 )
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	rmqURL := strings.TrimSpace(os.Getenv("RABBITMQ_URL"))
-	if rmqURL == "" {
-		rmqURL = "amqp://hacknu:hacknu@127.0.0.1:5672/"
-	}
-	consumerTag := strings.TrimSpace(os.Getenv("NORMALIZER_CONSUMER_TAG"))
+	cfg := config.Load()
+	log.Info(
+		"normalizer config",
+		"smoothing", cfg.EnableSmoothing,
+		"dedup", cfg.EnableDedup,
+		"dedup_window", cfg.DedupWindow,
+		"state_ttl", cfg.StateTTL,
+		"buffer_size", cfg.BufferSize,
+		"ema_alpha", cfg.EMAAlpha,
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -27,7 +32,7 @@ func main() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		rmqnormalizer.Run(ctx, log, rmqURL, consumerTag)
+		consumer.Run(ctx, log, cfg)
 	}()
 
 	sig := make(chan os.Signal, 1)

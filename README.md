@@ -1,6 +1,6 @@
 # Цифровой двойник локомотива
 
-Стек: **Go**, **PostgreSQL**, **RabbitMQ**, **WebSocket**, фронт в **`frontend/`**, бэкенд в **`backend/`**, симулятор в **`simulators/`**, брокер в **`rabbitmq/`** (отдельный compose). Общая модель телеметрии: **`pkg/telemetry`**, общая схема очереди: **`pkg/rabbitmq`**.
+Стек: **Go**, **PostgreSQL**, **RabbitMQ**, **WebSocket**, фронт в **`frontend/`**, бэкенд в **`backend/`**, normalizer в **`normalizer/`**, симулятор в **`simulators/`**. Общая модель телеметрии: **`pkg/telemetry`**, общая схема очереди: **`pkg/rabbitmq`**.
 
 Поток данных: **симулятор → RabbitMQ(raw) → normalizer → RabbitMQ(normalized) → бэкенд → фронт** (live по WebSocket `/ws/telemetry`).
 
@@ -10,10 +10,10 @@
 |--------|------------|
 | `frontend/` | HTML / CSS / JS дашборда (`index.html`, статика по `/static/`) |
 | `backend/cmd/server` | Точка входа API и раздача фронта |
-| `backend/cmd/normalizer` | Отдельный consumer raw-телеметрии и publisher normalized |
+| `normalizer/cmd/normalizer` | Отдельный микросервис normalizer (отдельный binary) |
+| `normalizer/internal/` | Config, consumer и stateful preprocessing логика |
 | `backend/internal/` | API, БД, health, store, WebSocket |
 | `simulators/cmd/simulator` | CLI: публикация JSON только в **RabbitMQ** |
-| `rabbitmq/` | `docker-compose.yml` — только брокер (можно поднять отдельно от Postgres) |
 | `pkg/rabbitmq` | Имена exchange/очередей (`raw/normalized/dlq`) и объявление топологии |
 | `simulators/synth` | Генератор «датчиков» (PRNG + состояние) |
 | `pkg/telemetry` | Общие типы `Sample` / `Alert` для бэка и симулятора |
@@ -22,49 +22,44 @@
 
 Запускать команды **из корня репозитория** (`hacknu/`), чтобы путь `./frontend` находился автоматически.
 
-1. Postgres и RabbitMQ:
+1. Поднять сервисы (RabbitMQ + Postgres + backend + normalizer):
 
 ```bash
 docker compose up -d
 ```
 
-Только брокер (из каталога `rabbitmq/`):
-
-```bash
-docker compose -f rabbitmq/docker-compose.yml up -d
-```
-
-2. API backend (читает только `telemetry.normalized`):
-
-```bash
-export DATABASE_URL="postgres://hacknu:hacknu@localhost:5432/locomotive?sslmode=disable"
-export HTTP_ADDR=":8080"
-# опционально: RABBITMQ_DISABLE=1 — без consumer (остаётся только POST /api/v1/telemetry)
-go run ./backend/cmd/server
-```
-
-3. Normalizer (в другом терминале) — читает `telemetry.raw`, пишет в `telemetry.normalized`:
-
-```bash
-export RABBITMQ_URL="amqp://hacknu:hacknu@127.0.0.1:5672/"
-# опционально: NORMALIZER_CONSUMER_TAG=hacknu-normalizer
-go run ./backend/cmd/normalizer
-```
-
-4. Симулятор (в третьем терминале) — публикует raw в **RabbitMQ** (`amqp://hacknu:hacknu@127.0.0.1:5672/` по умолчанию):
+2. Симулятор (в отдельном терминале) — публикует raw в **RabbitMQ**:
 
 ```bash
 go run ./simulators/cmd/simulator -train LOC-DEMO-001
 ```
 
-Ручная подача записи без очереди: **HTTP** `POST /api/v1/telemetry` (curl и т.д.).
+3. Браузер: [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
 
-5. Браузер: [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
-
-Если бинарь запускается из другой директории, укажите путь к фронту:
+4. Логи сервисов:
 
 ```bash
+docker compose logs -f backend normalizer
+```
+
+Если нужно запускать без compose (локально процессами):
+
+```bash
+# терминал 1
+export DATABASE_URL="postgres://hacknu:hacknu@localhost:5432/locomotive?sslmode=disable"
+export RABBITMQ_URL="amqp://hacknu:hacknu@127.0.0.1:5672/"
 export FRONTEND_DIR=/полный/путь/к/hacknu/frontend
+go run ./backend/cmd/server
+
+# терминал 2
+export RABBITMQ_URL="amqp://hacknu:hacknu@127.0.0.1:5672/"
+export NORMALIZER_ENABLE_SMOOTHING=true
+export NORMALIZER_ENABLE_DEDUP=true
+export NORMALIZER_DEDUP_WINDOW_MS=1500
+export NORMALIZER_STATE_TTL_MIN=15
+export NORMALIZER_BUFFER_SIZE=5
+export NORMALIZER_EMA_ALPHA=0.4
+go run ./normalizer/cmd/normalizer
 ```
 
 ## Переменные окружения
@@ -75,7 +70,12 @@ export FRONTEND_DIR=/полный/путь/к/hacknu/frontend
 | `HTTP_ADDR` | Адрес прослушивания, по умолчанию `:8080` |
 | `FRONTEND_DIR` | Каталог с `index.html` и статикой, по умолчанию `frontend` |
 | `RABBITMQ_URL` | AMQP URL бэкенда-consumer, по умолчанию `amqp://hacknu:hacknu@127.0.0.1:5672/` |
-| `NORMALIZER_CONSUMER_TAG` | consumer tag normalizer-сервиса (опционально) |
+| `NORMALIZER_ENABLE_SMOOTHING` | Включить EMA сглаживание (`true/false`) |
+| `NORMALIZER_ENABLE_DEDUP` | Включить дедупликацию (`true/false`) |
+| `NORMALIZER_DEDUP_WINDOW_MS` | Окно дедупликации в миллисекундах |
+| `NORMALIZER_STATE_TTL_MIN` | TTL train-state в минутах |
+| `NORMALIZER_BUFFER_SIZE` | Размер буфера последних sample на поезд |
+| `NORMALIZER_EMA_ALPHA` | Коэффициент EMA (0..1) |
 | `RABBITMQ_DISABLE` | `1` — не поднимать consumer (если брокера нет) |
 
 Управление RabbitMQ: [http://127.0.0.1:15672/](http://127.0.0.1:15672/) (логин/пароль `hacknu` / `hacknu` при запуске через compose из этого репо).
