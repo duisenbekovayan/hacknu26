@@ -1,15 +1,17 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Кабина — цифровой двойник</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=7" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
-  <script src="/static/app.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" defer></script>
+  <script src="/static/app.js?v=7" defer></script>
 </head>
 <body>
-  <div class="app" data-theme="dark">
+  <div class="app">
     <header class="top">
       <div class="brand">
         <span class="logo" aria-hidden="true">◆</span>
@@ -49,7 +51,32 @@
       </section>
 
       <section class="card chart-block">
-        <h2 class="card-title">Тренды <span class="muted small">(последние точки)</span></h2>
+        <h2 class="card-title">Тренды</h2>
+        <div class="replay-toolbar" aria-label="Окно времени и replay">
+          <div class="replay-row">
+            <span class="replay-label">Режим:</span>
+            <label class="replay-opt"><input type="radio" name="viewMode" value="live" checked /> Эфир</label>
+            <label class="replay-opt"><input type="radio" name="viewMode" value="replay" /> Replay</label>
+            <span class="replay-label">Окно</span>
+            <select id="replayMinutes" title="Длительность истории для графиков и загрузки replay">
+              <option value="5">5 мин</option>
+              <option value="10">10 мин</option>
+              <option value="15" selected>15 мин</option>
+            </select>
+            <button type="button" class="btn ghost" id="btnLoadReplay" title="Загрузить выбранный интервал из БД">Загрузить окно</button>
+          </div>
+          <p class="muted small replay-hint">
+            В эфире графики и метрики обновляются live (WebSocket + опрос). В replay — перемотка по сохранённым точкам; на графиках: колесо — zoom, перетаскивание — pan.
+          </p>
+          <div class="replay-scrub" id="replayScrubWrap" hidden>
+            <label class="scrub-label" for="replaySlider">Момент времени</label>
+            <input type="range" id="replaySlider" min="0" max="0" value="0" />
+            <div class="replay-meta">
+              <span id="replayTimeLabel" class="replay-time">—</span>
+              <button type="button" class="btn ghost" id="btnReplayPlay" title="Воспроизведение">▶</button>
+            </div>
+          </div>
+        </div>
         <div class="charts">
           <div class="chart-wrap"><canvas id="chartSpeed" height="120"></canvas></div>
           <div class="chart-wrap"><canvas id="chartTemp" height="120"></canvas></div>
@@ -84,11 +111,18 @@
         <h2 class="card-title">Алерты</h2>
         <ul class="alert-list" id="alerts"><li class="muted">нет активных</li></ul>
       </section>
+
+      <section class="card recommendations" aria-label="Рекомендации">
+        <h2 class="card-title">Рекомендации действий</h2>
+        <ul class="rec-list" id="recommendations">
+          <li class="muted">Появятся после получения телеметрии</li>
+        </ul>
+      </section>
     </main>
 
     <footer class="foot">
       <span id="lastTs" class="muted small">последнее обновление: —</span>
-      <span class="muted small">WebSocket <code>/ws/telemetry</code> · REST <code>/api/v1</code></span>
+      <span class="muted small">эфир: WebSocket + опрос <code>/api/v1/telemetry/latest</code> · история: <code>?minutes=5…15</code></span>
     </footer>
   </div>
 </body>

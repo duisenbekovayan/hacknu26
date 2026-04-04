@@ -2,7 +2,10 @@ openapi: 3.0.3
 info:
   title: Locomotive Digital Twin API
   version: 0.1.0
-  description: Мок-API телеметрии (хакатон). Секреты только через переменные окружения.
+  description: |
+    Мок-API телеметрии (хакатон). Секреты только через переменные окружения.
+    Поток телеметрии: **RabbitMQ** `telemetry.raw` → normalizer → `telemetry.normalized` → бэкенд → WebSocket дашборду.
+    Дополнительно для ручных тестов: `POST /api/v1/telemetry`.
 
 servers:
   - url: http://localhost:8080
@@ -45,7 +48,10 @@ paths:
           description: Нет данных
   /api/v1/telemetry/history:
     get:
-      summary: История (последние N, новые сверху)
+      summary: История по поезду
+      description: |
+        Без `minutes`: последние N записей, **новые сверху** (как раньше).
+        С `minutes`: все точки за последние M минут, **от старых к новым** (удобно для графиков и replay).
       parameters:
         - in: query
           name: train_id
@@ -53,7 +59,15 @@ paths:
           schema:
             type: string
         - in: query
+          name: minutes
+          description: Если задан (1–120), выборка по времени; иначе используется limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 120
+        - in: query
           name: limit
+          description: Используется только без `minutes`
           schema:
             type: integer
             default: 500
@@ -62,10 +76,7 @@ paths:
           description: Массив записей
   /ws/telemetry:
     get:
-      summary: WebSocket поток JSON записей к дашборду (после ingest)
-  /ws/ingest:
-    get:
-      summary: WebSocket приём телеметрии от симуляторов/края (текстовые кадры — один JSON = один Sample)
+      summary: WebSocket поток JSON записей к дашборду (после обработки на бэкенде)
 
 components:
   schemas:

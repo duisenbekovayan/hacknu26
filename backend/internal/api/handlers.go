@@ -20,8 +20,8 @@ import (
 )
 
 var wsUpgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  4096,
+	WriteBufferSize: 8192,
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
@@ -44,8 +44,11 @@ func (h *Handlers) Routes(r chi.Router) {
 	r.Post("/api/v1/telemetry", h.handleIngest)
 	r.Get("/api/v1/telemetry/latest", h.handleLatest)
 	r.Get("/api/v1/telemetry/history", h.handleHistory)
-	r.Get("/ws/telemetry", h.handleWS)
-	r.Get("/ws/ingest", h.handleWSIngest)
+}
+
+// WSTelemetry — поток для дашборда; регистрировать без middleware.Timeout (долгое соединение).
+func (h *Handlers) WSTelemetry(w http.ResponseWriter, r *http.Request) {
+	h.handleWS(w, r)
 }
 
 func (h *Handlers) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -81,6 +84,11 @@ func (h *Handlers) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 var errTrainIDRequired = errors.New("train_id required")
 
+// ProcessIngest — то же, что HTTP POST ingest; вызывается из RabbitMQ consumer.
+func (h *Handlers) ProcessIngest(ctx context.Context, s *telemetry.Sample) error {
+	return h.processIngest(ctx, s)
+}
+
 // processIngest нормализует сэмпл, считает health, пишет в БД и шлёт подписчикам /ws/telemetry.
 func (h *Handlers) processIngest(ctx context.Context, s *telemetry.Sample) error {
 	if s.TrainID == "" {
@@ -95,46 +103,6 @@ func (h *Handlers) processIngest(ctx context.Context, s *telemetry.Sample) error
 	}
 	h.hub.Broadcast(s)
 	return nil
-}
-
-// handleWSIngest — поток телеметрии от симуляторов/края: текстовые JSON-кадры по одному Sample.
-func (h *Handlers) handleWSIngest(w http.ResponseWriter, r *http.Request) {
-	c, err := wsUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		h.log.Warn("ws ingest upgrade", "err", err)
-		return
-	}
-	defer func() { _ = c.Close() }()
-
-	for {
-		mt, payload, err := c.ReadMessage()
-		if err != nil {
-			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-				h.log.Warn("ws ingest read", "err", err)
-			}
-			return
-		}
-		if mt != websocket.TextMessage && mt != websocket.BinaryMessage {
-			continue
-		}
-		var s telemetry.Sample
-		if err := json.Unmarshal(payload, &s); err != nil {
-			h.log.Warn("ws ingest json", "err", err)
-			_ = c.WriteJSON(map[string]string{"error": "bad json"})
-			continue
-		}
-		// Не используем r.Context(): на нём висит middleware.Timeout на весь HTTP-запрос;
-		// WebSocket живёт долго — после дедлайна Insert падал с context deadline exceeded.
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		ingestErr := h.processIngest(ctx, &s)
-		cancel()
-		if ingestErr != nil {
-			h.log.Warn("ws ingest", "err", ingestErr)
-			_ = c.WriteJSON(map[string]string{"error": ingestErr.Error()})
-			continue
-		}
-		_ = c.WriteJSON(map[string]any{"ok": true, "health_index": s.HealthIndex, "health_grade": s.HealthGrade})
-	}
 }
 
 func (h *Handlers) handleLatest(w http.ResponseWriter, r *http.Request) {
@@ -163,8 +131,27 @@ func (h *Handlers) handleHistory(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "train_id required", http.StatusBadRequest)
 		return
 	}
+
+	ctx := r.Context()
+	minutes, _ := strconv.Atoi(r.URL.Query().Get("minutes"))
+	if minutes > 0 {
+		if minutes > 120 {
+			minutes = 120
+		}
+		since := time.Now().UTC().Add(-time.Duration(minutes) * time.Minute)
+		list, err := h.store.HistoryRange(ctx, trainID, since, 5000)
+		if err != nil {
+			h.log.Error("history", "err", err)
+			http.Error(w, "storage error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(list)
+		return
+	}
+
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	list, err := h.store.History(r.Context(), trainID, limit)
+	list, err := h.store.History(ctx, trainID, limit)
 	if err != nil {
 		h.log.Error("history", "err", err)
 		http.Error(w, "storage error", http.StatusInternalServerError)

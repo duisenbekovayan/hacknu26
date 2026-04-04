@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"hacknu/backend/internal/api"
 	"hacknu/backend/internal/db"
+	"hacknu/backend/internal/rmqconsumer"
 	"hacknu/backend/internal/store"
 	"hacknu/backend/internal/ws"
 )
@@ -41,14 +43,34 @@ func main() {
 	st := store.NewTelemetry(pool)
 	h := api.NewHandlers(log, st, hub)
 
+	rmqURL := strings.TrimSpace(os.Getenv("RABBITMQ_URL"))
+	if os.Getenv("RABBITMQ_DISABLE") == "1" {
+		rmqURL = ""
+	} else if rmqURL == "" {
+		rmqURL = "amqp://hacknu:hacknu@127.0.0.1:5672/"
+	}
+	rmqCtx, rmqCancel := context.WithCancel(context.Background())
+	defer rmqCancel()
+	if rmqURL != "" {
+		go rmqconsumer.Run(rmqCtx, log, rmqURL, h)
+	} else {
+		log.Info("rabbitmq consumer disabled")
+	}
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsAll)
 
-	h.Routes(r)
+	// WebSocket нельзя оборачивать Timeout: после Upgrade контекст отменяется и ломает поток.
+	r.Get("/ws/telemetry", h.WSTelemetry)
+
+	r.Group(func(r chi.Router) {
+		r.Use(noStore)
+		r.Use(middleware.Timeout(60 * time.Second))
+		h.Routes(r)
+	})
 
 	frontendDir := os.Getenv("FRONTEND_DIR")
 	if frontendDir == "" {
@@ -59,7 +81,11 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info("frontend static", "dir", frontendDir)
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir(frontendDir))))
+	fs := http.FileServer(http.Dir(frontendDir))
+	r.Handle("/static/*", http.StripPrefix("/static/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, must-revalidate")
+		fs.ServeHTTP(w, req)
+	})))
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		b, err := os.ReadFile(filepath.Join(frontendDir, "index.html"))
 		if err != nil {
@@ -67,6 +93,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store, must-revalidate")
 		_, _ = w.Write(b)
 	})
 
@@ -91,10 +118,18 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
+	rmqCancel()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	_ = srv.Shutdown(shutdownCtx)
 	log.Info("shutdown complete")
+}
+
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func corsAll(next http.Handler) http.Handler {
