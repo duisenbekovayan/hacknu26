@@ -6,9 +6,12 @@ import (
 
 // Имена совпадают у симулятора (publisher) и бэкенда (consumer).
 const (
-	Exchange   = "telemetry"
-	Queue      = "telemetry.samples"
-	RoutingKey = "sample"
+	Exchange             = "telemetry"
+	RawQueue             = "telemetry.raw"
+	NormalizedQueue      = "telemetry.normalized"
+	RawDLQ               = "telemetry.raw.dlq"
+	RawRoutingKey        = "raw"
+	NormalizedRoutingKey = "normalized"
 )
 
 // DeclareTelemetryTopology объявляет exchange, очередь и привязку (идемпотентно).
@@ -19,9 +22,22 @@ func DeclareTelemetryTopology(ch *amqp091.Channel) error {
 		return err
 	}
 	if _, err := ch.QueueDeclare(
-		Queue, true, false, false, false, nil,
+		RawQueue, true, false, false, false, nil,
 	); err != nil {
 		return err
 	}
-	return ch.QueueBind(Queue, RoutingKey, Exchange, false, nil)
+	if _, err := ch.QueueDeclare(
+		NormalizedQueue, true, false, false, false, nil,
+	); err != nil {
+		return err
+	}
+	if _, err := ch.QueueDeclare(
+		RawDLQ, true, false, false, false, nil,
+	); err != nil {
+		return err
+	}
+	if err := ch.QueueBind(RawQueue, RawRoutingKey, Exchange, false, nil); err != nil {
+		return err
+	}
+	return ch.QueueBind(NormalizedQueue, NormalizedRoutingKey, Exchange, false, nil)
 }
