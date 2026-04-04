@@ -4,14 +4,19 @@ import (
 	amqp091 "github.com/rabbitmq/amqp091-go"
 )
 
-// Имена совпадают у симулятора (publisher) и бэкенда (consumer).
+// Поток: simulator → sample.raw → telemetry.raw → normalizer → sample.normalized → telemetry.normalized → backend → front
 const (
-	Exchange   = "telemetry"
-	Queue      = "telemetry.samples"
-	RoutingKey = "sample"
+	Exchange = "telemetry"
+
+	RawQueue        = "telemetry.raw"
+	NormalizedQueue = "telemetry.normalized"
+	RawDLQ          = "telemetry.raw.dlq"
+
+	RoutingKeyRaw        = "sample.raw"
+	RoutingKeyNormalized = "sample.normalized"
 )
 
-// DeclareTelemetryTopology объявляет exchange, очередь и привязку (идемпотентно).
+// DeclareTelemetryTopology объявляет exchange, очереди raw/normalized/dlq и привязки (идемпотентно).
 func DeclareTelemetryTopology(ch *amqp091.Channel) error {
 	if err := ch.ExchangeDeclare(
 		Exchange, "direct", true, false, false, false, nil,
@@ -19,9 +24,25 @@ func DeclareTelemetryTopology(ch *amqp091.Channel) error {
 		return err
 	}
 	if _, err := ch.QueueDeclare(
-		Queue, true, false, false, false, nil,
+		RawQueue, true, false, false, false, nil,
 	); err != nil {
 		return err
 	}
-	return ch.QueueBind(Queue, RoutingKey, Exchange, false, nil)
+	if err := ch.QueueBind(RawQueue, RoutingKeyRaw, Exchange, false, nil); err != nil {
+		return err
+	}
+	if _, err := ch.QueueDeclare(
+		NormalizedQueue, true, false, false, false, nil,
+	); err != nil {
+		return err
+	}
+	if err := ch.QueueBind(NormalizedQueue, RoutingKeyNormalized, Exchange, false, nil); err != nil {
+		return err
+	}
+	if _, err := ch.QueueDeclare(
+		RawDLQ, true, false, false, false, nil,
+	); err != nil {
+		return err
+	}
+	return nil
 }

@@ -2,7 +2,9 @@
 
 Стек: **Go**, **PostgreSQL**, **RabbitMQ**, **WebSocket**, фронт в **`frontend/`**, бэкенд в **`backend/`**, normalizer в **`normalizer/`**, симулятор в **`simulators/`**. Общая модель телеметрии: **`pkg/telemetry`**, общая схема очереди: **`pkg/rabbitmq`**.
 
-Поток данных: **симулятор → RabbitMQ → бэкенд → фронт** (live по WebSocket `/ws/telemetry`).
+Поток данных: **симулятор → RabbitMQ (`telemetry.raw`) → normalizer → RabbitMQ (`telemetry.normalized`) → бэкенд → фронт** (live по WebSocket `/ws/telemetry` и опрос REST).
+
+Без **normalizer** сообщения из симулятора не доходят до бэкенда (остаются в `telemetry.raw`). Ручной **`POST /api/v1/telemetry`** обходит очереди и идёт сразу в API.
 
 ## Структура репозитория
 
@@ -22,36 +24,34 @@
 
 Запускать команды **из корня репозитория** (`hacknu/`), чтобы путь `./frontend` находился автоматически.
 
-1. Поднять сервисы (RabbitMQ + Postgres + backend + normalizer):
+1. Поднять всё (RabbitMQ, Postgres, **normalizer**, **simulator**, **backend** с фронтом):
 
 ```bash
 docker compose up -d
 ```
 
-2. Симулятор (в отдельном терминале) — публикует raw в **RabbitMQ**:
+Симулятор в compose публикует raw в RabbitMQ (`train=LOC-DEMO-001`, интервал 1 с). Параметры можно сменить в `docker-compose.yml` (`command:` у сервиса `simulator`) или собрать образ с другим `CMD` в `simulators/Dockerfile`.
+
+2. Браузер: [http://127.0.0.1:8080/](http://127.0.0.1:8080/) — фронт отдаёт **backend**.
+
+3. Логи:
 
 ```bash
-go run ./simulators/cmd/simulator -train LOC-DEMO-001
+docker compose logs -f backend normalizer simulator
 ```
 
-3. Браузер: [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
+Локально без Docker-симулятора: `go run ./simulators/cmd/simulator -train LOC-DEMO-001`.
 
-4. Логи сервисов:
+Если нужно запускать **без** полного compose (только инфра или всё кроме Go-сервисов), сначала поднимите RabbitMQ и Postgres:
 
 ```bash
-docker compose logs -f backend normalizer
+docker compose up -d rabbitmq postgres
 ```
 
-Если нужно запускать без compose (локально процессами):
+Дальше процессы **в таком порядке** (normalizer должен быть запущен до или вместе с симулятором, иначе raw-очередь не обработается):
 
 ```bash
-# терминал 1
-export DATABASE_URL="postgres://hacknu:hacknu@localhost:5432/locomotive?sslmode=disable"
-export RABBITMQ_URL="amqp://hacknu:hacknu@127.0.0.1:5672/"
-export FRONTEND_DIR=/полный/путь/к/hacknu/frontend
-go run ./backend/cmd/server
-
-# терминал 2
+# терминал 1 — normalizer
 export RABBITMQ_URL="amqp://hacknu:hacknu@127.0.0.1:5672/"
 export NORMALIZER_ENABLE_SMOOTHING=true
 export NORMALIZER_ENABLE_DEDUP=true
@@ -60,6 +60,15 @@ export NORMALIZER_STATE_TTL_MIN=15
 export NORMALIZER_BUFFER_SIZE=5
 export NORMALIZER_EMA_ALPHA=0.4
 go run ./normalizer/cmd/normalizer
+
+# терминал 2 — backend
+export DATABASE_URL="postgres://hacknu:hacknu@localhost:5432/locomotive?sslmode=disable"
+export RABBITMQ_URL="amqp://hacknu:hacknu@127.0.0.1:5672/"
+export FRONTEND_DIR=/полный/путь/к/hacknu/frontend
+go run ./backend/cmd/server
+
+# терминал 3 — симулятор (после п.1–2)
+go run ./simulators/cmd/simulator -train LOC-DEMO-001
 ```
 
 ## Переменные окружения
@@ -76,7 +85,7 @@ go run ./normalizer/cmd/normalizer
 | `NORMALIZER_STATE_TTL_MIN` | TTL train-state в минутах |
 | `NORMALIZER_BUFFER_SIZE` | Размер буфера последних sample на поезд |
 | `NORMALIZER_EMA_ALPHA` | Коэффициент EMA (0..1) |
-| `RABBITMQ_DISABLE` | `1` — не поднимать consumer (если брокера нет) |
+| `RABBITMQ_DISABLE` | `1` — отключить consumer бэкенда (тогда телеметрия только через `POST`; поток **симулятор → очередь** не работает) |
 
 Управление RabbitMQ: [http://127.0.0.1:15672/](http://127.0.0.1:15672/) (логин/пароль `hacknu` / `hacknu` при запуске через compose из этого репо).
 
