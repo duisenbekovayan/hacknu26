@@ -71,6 +71,38 @@ func (t *Telemetry) History(ctx context.Context, trainID string, limit int) ([]t
 	return out, rows.Err()
 }
 
+// HistoryRange возвращает записи с recorded_at >= since, от старых к новым (удобно для графиков и replay).
+func (t *Telemetry) HistoryRange(ctx context.Context, trainID string, since time.Time, limit int) ([]telemetry.Sample, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 5000
+	}
+	rows, err := t.pool.Query(ctx, `
+		SELECT payload
+		FROM telemetry_events
+		WHERE train_id = $1 AND recorded_at >= $2
+		ORDER BY recorded_at ASC
+		LIMIT $3
+	`, trainID, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []telemetry.Sample
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var s telemetry.Sample
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // Latest возвращает последнюю запись по поезду.
 func (t *Telemetry) Latest(ctx context.Context, trainID string) (*telemetry.Sample, error) {
 	row := t.pool.QueryRow(ctx, `
