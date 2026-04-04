@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -11,9 +13,10 @@ import (
 	"github.com/gorilla/websocket"
 
 	"hacknu/backend/internal/health"
+	"hacknu/backend/internal/pipeline"
 	"hacknu/backend/internal/store"
-	"hacknu/pkg/telemetry"
 	wshub "hacknu/backend/internal/ws"
+	"hacknu/pkg/telemetry"
 )
 
 var wsUpgrader = websocket.Upgrader{
@@ -26,14 +29,35 @@ var wsUpgrader = websocket.Upgrader{
 
 // Handlers HTTP + WebSocket.
 type Handlers struct {
-	log   *slog.Logger
+	log    *slog.Logger
+	store  *store.Telemetry
+	hub    *wshub.Hub
+	ingest ingester
+}
+
+type ingester interface {
+	Ingest(ctx context.Context, s *telemetry.Sample) error
+}
+
+type directIngest struct {
 	store *store.Telemetry
 	hub   *wshub.Hub
 }
 
+func (d directIngest) Ingest(ctx context.Context, s *telemetry.Sample) error {
+	if err := d.store.Insert(ctx, s); err != nil {
+		return err
+	}
+	d.hub.Broadcast(s)
+	return nil
+}
+
 // NewHandlers регистрирует обработчики.
-func NewHandlers(log *slog.Logger, st *store.Telemetry, hub *wshub.Hub) *Handlers {
-	return &Handlers{log: log, store: st, hub: hub}
+func NewHandlers(log *slog.Logger, st *store.Telemetry, hub *wshub.Hub, ingest ingester) *Handlers {
+	if ingest == nil {
+		ingest = directIngest{store: st, hub: hub}
+	}
+	return &Handlers{log: log, store: st, hub: hub, ingest: ingest}
 }
 
 func (h *Handlers) Routes(r chi.Router) {
@@ -69,12 +93,19 @@ func (h *Handlers) handleIngest(w http.ResponseWriter, r *http.Request) {
 	health.Apply(&s)
 
 	ctx := r.Context()
-	if err := h.store.Insert(ctx, &s); err != nil {
+	if err := h.ingest.Ingest(ctx, &s); err != nil {
+		if errors.Is(err, pipeline.ErrQueueFull) {
+			http.Error(w, "telemetry queue overloaded", http.StatusServiceUnavailable)
+			return
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			http.Error(w, "ingest timeout", http.StatusRequestTimeout)
+			return
+		}
 		h.log.Error("insert", "err", err)
 		http.Error(w, "storage error", http.StatusInternalServerError)
 		return
 	}
-	h.hub.Broadcast(&s)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

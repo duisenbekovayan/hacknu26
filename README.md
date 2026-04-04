@@ -52,6 +52,11 @@ export FRONTEND_DIR=/полный/путь/к/hacknu/frontend
 | `DATABASE_URL` | PostgreSQL (см. `backend/internal/db/pool.go`) |
 | `HTTP_ADDR` | Адрес прослушивания, по умолчанию `:8080` |
 | `FRONTEND_DIR` | Каталог с `index.html` и статикой, по умолчанию `frontend` |
+| `INGEST_QUEUE_BUFFER` | Размер буфера встроенной очереди ingest, по умолчанию `1024` |
+| `INGEST_QUEUE_WORKERS` | Кол-во воркеров ingest-очереди, по умолчанию `4` |
+
+`POST /api/v1/telemetry` теперь проходит через встроенную очередь (bounded channel + workers).  
+При переполнении возвращается `503 Service Unavailable`.
 
 ## Тесты
 

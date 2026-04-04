@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"hacknu/backend/internal/api"
 	"hacknu/backend/internal/db"
+	"hacknu/backend/internal/pipeline"
 	"hacknu/backend/internal/store"
 	"hacknu/backend/internal/ws"
 )
@@ -39,7 +41,11 @@ func main() {
 
 	hub := ws.NewHub(log)
 	st := store.NewTelemetry(pool)
-	h := api.NewHandlers(log, st, hub)
+	q := pipeline.NewTelemetryQueue(log, st, hub, pipeline.QueueOptions{
+		Buffer:  envInt("INGEST_QUEUE_BUFFER", 1024),
+		Workers: envInt("INGEST_QUEUE_WORKERS", 4),
+	})
+	h := api.NewHandlers(log, st, hub, q)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -94,7 +100,22 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	_ = srv.Shutdown(shutdownCtx)
+	if err := q.Shutdown(shutdownCtx); err != nil {
+		log.Warn("queue shutdown", "err", err)
+	}
 	log.Info("shutdown complete")
+}
+
+func envInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
 }
 
 func corsAll(next http.Handler) http.Handler {

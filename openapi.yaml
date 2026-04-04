@@ -29,6 +29,8 @@ paths:
           description: Сохранено и разослано по WebSocket
         "400":
           description: Ошибка валидации
+        "503":
+          description: Очередь ingest перегружена
   /api/v1/telemetry/latest:
     get:
       summary: Последняя запись по поезду
