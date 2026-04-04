@@ -37,7 +37,7 @@ func main() {
 	if u == "" {
 		u = "amqp://hacknu:hacknu@127.0.0.1:5672/"
 	}
-	log.Printf("simulator -> RabbitMQ %s each %s (train=%s)", u, *interval, *train)
+	log.Printf("simulator -> RabbitMQ raw (%s) each %s (train=%s)", u, *interval, *train)
 	runAMQPPublish(u, *interval, *train, g)
 }
 
@@ -71,7 +71,7 @@ func runAMQPPublish(amqpURL string, interval time.Duration, train string, g *syn
 			if err != nil {
 				return err
 			}
-			return rabbitmq.PublishSample(ch, body)
+			return rabbitmq.PublishRawSample(ch, body)
 		}
 
 		if err := send(); err != nil {
