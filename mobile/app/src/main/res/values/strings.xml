@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Locomotive Telemetry</string>
+    <string name="dashboard_title">Дашборд</string>
+    <string name="locomotive_twin">Цифровой двойник локомотива</string>
+    <string name="speed">СКОРОСТЬ</string>
+    <string name="fuel">ТОПЛИВО</string>
+    <string name="alerts">Алерты</string>
+    <string name="no_active_alerts">Нет активных алертов</string>
+    <string name="speed_unit">%1$.1f км/ч</string>
+    <string name="fuel_unit">%1$.0f л</string>
+</resources>
