@@ -61,10 +61,16 @@ func main() {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsAll)
 
-	h.Routes(r)
+	// WebSocket нельзя оборачивать Timeout: после Upgrade контекст отменяется и ломает поток.
+	r.Get("/ws/telemetry", h.WSTelemetry)
+
+	r.Group(func(r chi.Router) {
+		r.Use(noStore)
+		r.Use(middleware.Timeout(60 * time.Second))
+		h.Routes(r)
+	})
 
 	frontendDir := os.Getenv("FRONTEND_DIR")
 	if frontendDir == "" {
@@ -75,7 +81,11 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info("frontend static", "dir", frontendDir)
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir(frontendDir))))
+	fs := http.FileServer(http.Dir(frontendDir))
+	r.Handle("/static/*", http.StripPrefix("/static/", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, must-revalidate")
+		fs.ServeHTTP(w, req)
+	})))
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		b, err := os.ReadFile(filepath.Join(frontendDir, "index.html"))
 		if err != nil {
@@ -83,6 +93,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store, must-revalidate")
 		_, _ = w.Write(b)
 	})
 
@@ -112,6 +123,13 @@ func main() {
 	defer shutdownCancel()
 	_ = srv.Shutdown(shutdownCtx)
 	log.Info("shutdown complete")
+}
+
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func corsAll(next http.Handler) http.Handler {
