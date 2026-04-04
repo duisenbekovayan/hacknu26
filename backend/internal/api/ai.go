@@ -7,6 +7,16 @@ import (
 	"hacknu/backend/internal/llm"
 )
 
+func writeAIAnalyzeError(w http.ResponseWriter, err error) {
+	msg := err.Error()
+	if len(msg) > 1800 {
+		msg = msg[:1800] + "…"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadGateway)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
 func (h *Handlers) handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -26,7 +36,7 @@ func (h *Handlers) handleAIAnalyze(w http.ResponseWriter, r *http.Request) {
 	out, err := h.ai.Analyze(r.Context(), in)
 	if err != nil {
 		h.log.Error("ai analyze", "err", err)
-		http.Error(w, "ai analyze failed", http.StatusBadGateway)
+		writeAIAnalyzeError(w, err)
 		return
 	}
 

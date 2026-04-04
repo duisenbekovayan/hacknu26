@@ -887,7 +887,14 @@
       });
       if (!res.ok) {
         const t = await res.text();
-        throw new Error(t || res.statusText);
+        let msg = t;
+        try {
+          const j = JSON.parse(t);
+          if (j && typeof j.error === "string" && j.error) msg = j.error;
+        } catch (_) {
+          msg = (t || "").trim() || res.statusText;
+        }
+        throw new Error(msg);
       }
       const data = await res.json();
       renderAIOut(data);

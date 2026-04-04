@@ -31,6 +31,8 @@
 docker compose up -d
 ```
 
+Ключи **ИИ** и **Google Maps** положите в файл **`.env`** в корне репозитория (`GEMINI_API_KEY` / `OPENAI_API_KEY`, при необходимости `GOOGLE_MAPS_API_KEY`). Docker Compose подставляет их в сервис `backend`; без этого в контейнере ИИ и карта будут отключены, хотя при локальном `go run` всё работает. После смены `.env` перезапустите backend: `docker compose up -d --force-recreate backend`.
+
 Симулятор в compose публикует raw в RabbitMQ (`train=LOC-DEMO-001`, интервал 1 с). Параметры можно сменить в `docker-compose.yml` (`command:` у сервиса `simulator`) или собрать образ с другим `CMD` в `simulators/Dockerfile`.
 
 2. Браузер: [http://127.0.0.1:8080/](http://127.0.0.1:8080/) — фронт отдаёт **backend**.

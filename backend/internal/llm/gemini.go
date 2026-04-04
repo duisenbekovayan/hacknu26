@@ -37,8 +37,13 @@ type geminiGenCfg struct {
 }
 
 type geminiGenerateResponse struct {
+	PromptFeedback *struct {
+		BlockReason       string `json:"blockReason"`
+		BlockReasonMessage string `json:"blockReasonMessage"`
+	} `json:"promptFeedback"`
 	Candidates []struct {
-		Content struct {
+		FinishReason string `json:"finishReason"`
+		Content      struct {
 			Parts []struct {
 				Text string `json:"text"`
 			} `json:"parts"`
@@ -103,8 +108,22 @@ func (s *Service) analyzeGemini(ctx context.Context, systemPrompt, userPrompt st
 	if parsed.Error != nil && parsed.Error.Message != "" {
 		return "", fmt.Errorf("gemini api: %s", parsed.Error.Message)
 	}
-	if len(parsed.Candidates) == 0 || len(parsed.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("gemini: empty candidates")
+	if len(parsed.Candidates) == 0 {
+		if parsed.PromptFeedback != nil && parsed.PromptFeedback.BlockReason != "" {
+			msg := parsed.PromptFeedback.BlockReason
+			if parsed.PromptFeedback.BlockReasonMessage != "" {
+				msg += ": " + parsed.PromptFeedback.BlockReasonMessage
+			}
+			return "", fmt.Errorf("gemini blocked (%s)", msg)
+		}
+		return "", fmt.Errorf("gemini: пустой ответ (проверьте GEMINI_MODEL и что Generative Language API включён для ключа)")
+	}
+	if len(parsed.Candidates[0].Content.Parts) == 0 {
+		fr := parsed.Candidates[0].FinishReason
+		if fr != "" {
+			return "", fmt.Errorf("gemini: нет текста в ответе (finishReason=%s)", fr)
+		}
+		return "", fmt.Errorf("gemini: нет текста в ответе")
 	}
 	var b strings.Builder
 	for _, p := range parsed.Candidates[0].Content.Parts {
