@@ -2,7 +2,7 @@
 
 Стек: **Go**, **PostgreSQL**, **RabbitMQ**, **WebSocket**, фронт в **`frontend/`**, бэкенд в **`backend/`**, симулятор в **`simulators/`**, брокер в **`rabbitmq/`** (отдельный compose). Общая модель телеметрии: **`pkg/telemetry`**, общая схема очереди: **`pkg/rabbitmq`**.
 
-Поток данных: **симулятор → RabbitMQ(raw) → normalizer → RabbitMQ(normalized) → бэкенд → фронт** (live по WebSocket `/ws/telemetry`).
+Поток данных: **симулятор → RabbitMQ → бэкенд → фронт** (live по WebSocket `/ws/telemetry`).
 
 ## Структура репозитория
 
@@ -10,11 +10,10 @@
 |--------|------------|
 | `frontend/` | HTML / CSS / JS дашборда (`index.html`, статика по `/static/`) |
 | `backend/cmd/server` | Точка входа API и раздача фронта |
-| `backend/cmd/normalizer` | Отдельный consumer raw-телеметрии и publisher normalized |
 | `backend/internal/` | API, БД, health, store, WebSocket |
 | `simulators/cmd/simulator` | CLI: публикация JSON только в **RabbitMQ** |
 | `rabbitmq/` | `docker-compose.yml` — только брокер (можно поднять отдельно от Postgres) |
-| `pkg/rabbitmq` | Имена exchange/очередей (`raw/normalized/dlq`) и объявление топологии |
+| `pkg/rabbitmq` | Имена exchange/очереди и объявление топологии |
 | `simulators/synth` | Генератор «датчиков» (PRNG + состояние) |
 | `pkg/telemetry` | Общие типы `Sample` / `Alert` для бэка и симулятора |
 
@@ -34,7 +33,7 @@ docker compose up -d
 docker compose -f rabbitmq/docker-compose.yml up -d
 ```
 
-2. API backend (читает только `telemetry.normalized`):
+2. API:
 
 ```bash
 export DATABASE_URL="postgres://hacknu:hacknu@localhost:5432/locomotive?sslmode=disable"
@@ -43,15 +42,7 @@ export HTTP_ADDR=":8080"
 go run ./backend/cmd/server
 ```
 
-3. Normalizer (в другом терминале) — читает `telemetry.raw`, пишет в `telemetry.normalized`:
-
-```bash
-export RABBITMQ_URL="amqp://hacknu:hacknu@127.0.0.1:5672/"
-# опционально: NORMALIZER_CONSUMER_TAG=hacknu-normalizer
-go run ./backend/cmd/normalizer
-```
-
-4. Симулятор (в третьем терминале) — публикует raw в **RabbitMQ** (`amqp://hacknu:hacknu@127.0.0.1:5672/` по умолчанию):
+3. Симулятор (в другом терминале) — публикует в **RabbitMQ** (`amqp://hacknu:hacknu@127.0.0.1:5672/` по умолчанию):
 
 ```bash
 go run ./simulators/cmd/simulator -train LOC-DEMO-001
@@ -59,7 +50,7 @@ go run ./simulators/cmd/simulator -train LOC-DEMO-001
 
 Ручная подача записи без очереди: **HTTP** `POST /api/v1/telemetry` (curl и т.д.).
 
-5. Браузер: [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
+4. Браузер: [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
 
 Если бинарь запускается из другой директории, укажите путь к фронту:
 
@@ -75,7 +66,6 @@ export FRONTEND_DIR=/полный/путь/к/hacknu/frontend
 | `HTTP_ADDR` | Адрес прослушивания, по умолчанию `:8080` |
 | `FRONTEND_DIR` | Каталог с `index.html` и статикой, по умолчанию `frontend` |
 | `RABBITMQ_URL` | AMQP URL бэкенда-consumer, по умолчанию `amqp://hacknu:hacknu@127.0.0.1:5672/` |
-| `NORMALIZER_CONSUMER_TAG` | consumer tag normalizer-сервиса (опционально) |
 | `RABBITMQ_DISABLE` | `1` — не поднимать consumer (если брокера нет) |
 
 Управление RabbitMQ: [http://127.0.0.1:15672/](http://127.0.0.1:15672/) (логин/пароль `hacknu` / `hacknu` при запуске через compose из этого репо).
@@ -90,5 +80,4 @@ go test ./... -count=1
 
 Интеграционный тест в `backend/internal/store` без Postgres пропускается. `SKIP_INTEGRATION=1 go test ./...` — без интеграции.
 
-Спецификация API: `openapi.yaml`
 Спецификация API: `openapi.yaml`.

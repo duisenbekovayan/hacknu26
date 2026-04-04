@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: |
     Мок-API телеметрии (хакатон). Секреты только через переменные окружения.
-    Основной поток симулятора: **RabbitMQ(raw)** → normalizer → **RabbitMQ(normalized)** → бэкенд → WebSocket дашборду.
+    Основной поток симулятора: **RabbitMQ** (очередь `telemetry.samples`) → бэкенд → WebSocket дашборду.
     Дополнительно для ручных тестов: `POST /api/v1/telemetry`.
 
 servers:

@@ -75,7 +75,7 @@ func runSession(ctx context.Context, log *slog.Logger, url string, ingest Ingest
 	}
 
 	msgs, err := ch.Consume(
-		rabbitmq.NormalizedQueue,
+		rabbitmq.Queue,
 		"hacknu-ingest",
 		false, // manual ack
 		false, false, false, nil,
@@ -84,7 +84,7 @@ func runSession(ctx context.Context, log *slog.Logger, url string, ingest Ingest
 		return fmt.Errorf("consume: %w", err)
 	}
 
-	log.Info("rabbitmq consumer subscribed", "queue", rabbitmq.NormalizedQueue)
+	log.Info("rabbitmq consumer subscribed", "queue", rabbitmq.Queue)
 
 	for {
 		select {
