@@ -9,7 +9,7 @@ type Alert struct {
 	Text     string `json:"text"`
 }
 
-// Sample — одна запись телеметрии (ingest / WS / история).
+// Sample — одна запись телеметрии (ingest / история / live).
 type Sample struct {
 	TS                   string    `json:"ts"`
 	TrainID              string    `json:"train_id"`

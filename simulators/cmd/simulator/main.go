@@ -5,18 +5,18 @@ import (
 	"flag"
 	"log"
 	"math/rand"
-	"net/http"
-	"net/url"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
+	amqp091 "github.com/rabbitmq/amqp091-go"
 
+	"hacknu/pkg/rabbitmq"
 	"hacknu/simulators/synth"
 )
 
 func main() {
-	base := flag.String("url", "http://127.0.0.1:8080", "Базовый URL API (http/https → ws/wss для /ws/ingest)")
+	amqpURL := flag.String("amqp", "", "RabbitMQ (по умолчанию $RABBITMQ_URL или amqp://hacknu:hacknu@127.0.0.1:5672/)")
 	interval := flag.Duration("interval", time.Second, "Интервал отправки")
 	train := flag.String("train", "LOC-DEMO-001", "Идентификатор поезда")
 	seed := flag.Int64("seed", 0, "Seed PRNG (0 — от времени, для повторяемого демо задайте число)")
@@ -30,68 +30,72 @@ func main() {
 	}
 	g := synth.NewSynthesizer(rng)
 
-	wsURL := ingestWebSocketURL(*base)
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-		Proxy:            http.ProxyFromEnvironment,
+	u := strings.TrimSpace(*amqpURL)
+	if u == "" {
+		u = strings.TrimSpace(os.Getenv("RABBITMQ_URL"))
 	}
+	if u == "" {
+		u = "amqp://hacknu:hacknu@127.0.0.1:5672/"
+	}
+	log.Printf("simulator -> RabbitMQ %s each %s (train=%s)", u, *interval, *train)
+	runAMQPPublish(u, *interval, *train, g)
+}
 
-	log.Printf("simulator -> WebSocket ingest %s each %s (train=%s)", wsURL, *interval, *train)
-
+func runAMQPPublish(amqpURL string, interval time.Duration, train string, g *synth.Synthesizer) {
 	for {
-		conn, _, err := dialer.Dial(wsURL, nil)
+		conn, err := amqp091.Dial(amqpURL)
 		if err != nil {
-			log.Println("ws dial:", err, "- retry in 1s")
+			log.Println("amqp dial:", err, "- retry in 1s")
 			time.Sleep(time.Second)
 			continue
 		}
-		log.Println("ws ingest connected")
+		ch, err := conn.Channel()
+		if err != nil {
+			_ = conn.Close()
+			log.Println("amqp channel:", err, "- retry in 1s")
+			time.Sleep(time.Second)
+			continue
+		}
+		if err := rabbitmq.DeclareTelemetryTopology(ch); err != nil {
+			_ = ch.Close()
+			_ = conn.Close()
+			log.Println("amqp topology:", err, "- retry in 1s")
+			time.Sleep(time.Second)
+			continue
+		}
+		log.Println("rabbitmq publisher connected")
 
 		send := func() error {
-			s := g.NextSample(*train)
+			s := g.NextSample(train)
 			body, err := json.Marshal(s)
 			if err != nil {
 				return err
 			}
-			return conn.WriteMessage(websocket.TextMessage, body)
+			return rabbitmq.PublishSample(ch, body)
 		}
 
 		if err := send(); err != nil {
-			log.Println("ws write:", err)
+			log.Println("amqp publish:", err)
+			_ = ch.Close()
 			_ = conn.Close()
+			time.Sleep(time.Second)
 			continue
 		}
-		log.Println("first sample sent OK")
+		log.Println("first sample published OK")
 
-		tick := time.NewTicker(*interval)
+		tick := time.NewTicker(interval)
 		for range tick.C {
 			if err := send(); err != nil {
-				log.Println("ws write:", err)
+				log.Println("amqp publish:", err)
 				tick.Stop()
+				_ = ch.Close()
 				_ = conn.Close()
 				break
 			}
 		}
 		tick.Stop()
+		_ = ch.Close()
 		_ = conn.Close()
 		log.Println("reconnecting…")
 	}
-}
-
-func ingestWebSocketURL(httpBase string) string {
-	u, err := url.Parse(strings.TrimSpace(httpBase))
-	if err != nil || u.Host == "" {
-		return "ws://127.0.0.1:8080/ws/ingest"
-	}
-	switch u.Scheme {
-	case "https":
-		u.Scheme = "wss"
-	case "http":
-		u.Scheme = "ws"
-	default:
-		u.Scheme = "ws"
-	}
-	u.Path = "/ws/ingest"
-	u.RawQuery = ""
-	return u.String()
 }

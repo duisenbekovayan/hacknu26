@@ -1,3 +1,5 @@
+# Запуск только брокера RabbitMQ (отдельно от корневого compose с Postgres).
+# Из этой папки: docker compose up -d
 services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -16,22 +18,5 @@ services:
       timeout: 5s
       retries: 5
 
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: hacknu
-      POSTGRES_PASSWORD: hacknu
-      POSTGRES_DB: locomotive
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hacknu -d locomotive"]
-      interval: 3s
-      timeout: 3s
-      retries: 10
-
 volumes:
-  pgdata:
   rmqdata:

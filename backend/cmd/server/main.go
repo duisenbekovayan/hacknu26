@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"hacknu/backend/internal/api"
 	"hacknu/backend/internal/db"
+	"hacknu/backend/internal/rmqconsumer"
 	"hacknu/backend/internal/store"
 	"hacknu/backend/internal/ws"
 )
@@ -40,6 +42,20 @@ func main() {
 	hub := ws.NewHub(log)
 	st := store.NewTelemetry(pool)
 	h := api.NewHandlers(log, st, hub)
+
+	rmqURL := strings.TrimSpace(os.Getenv("RABBITMQ_URL"))
+	if os.Getenv("RABBITMQ_DISABLE") == "1" {
+		rmqURL = ""
+	} else if rmqURL == "" {
+		rmqURL = "amqp://hacknu:hacknu@127.0.0.1:5672/"
+	}
+	rmqCtx, rmqCancel := context.WithCancel(context.Background())
+	defer rmqCancel()
+	if rmqURL != "" {
+		go rmqconsumer.Run(rmqCtx, log, rmqURL, h)
+	} else {
+		log.Info("rabbitmq consumer disabled")
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -91,6 +107,7 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
+	rmqCancel()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	_ = srv.Shutdown(shutdownCtx)

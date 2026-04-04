@@ -45,7 +45,6 @@ func (h *Handlers) Routes(r chi.Router) {
 	r.Get("/api/v1/telemetry/latest", h.handleLatest)
 	r.Get("/api/v1/telemetry/history", h.handleHistory)
 	r.Get("/ws/telemetry", h.handleWS)
-	r.Get("/ws/ingest", h.handleWSIngest)
 }
 
 func (h *Handlers) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -81,6 +80,11 @@ func (h *Handlers) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 var errTrainIDRequired = errors.New("train_id required")
 
+// ProcessIngest — то же, что HTTP POST ingest; вызывается из RabbitMQ consumer.
+func (h *Handlers) ProcessIngest(ctx context.Context, s *telemetry.Sample) error {
+	return h.processIngest(ctx, s)
+}
+
 // processIngest нормализует сэмпл, считает health, пишет в БД и шлёт подписчикам /ws/telemetry.
 func (h *Handlers) processIngest(ctx context.Context, s *telemetry.Sample) error {
 	if s.TrainID == "" {
@@ -95,46 +99,6 @@ func (h *Handlers) processIngest(ctx context.Context, s *telemetry.Sample) error
 	}
 	h.hub.Broadcast(s)
 	return nil
-}
-
-// handleWSIngest — поток телеметрии от симуляторов/края: текстовые JSON-кадры по одному Sample.
-func (h *Handlers) handleWSIngest(w http.ResponseWriter, r *http.Request) {
-	c, err := wsUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		h.log.Warn("ws ingest upgrade", "err", err)
-		return
-	}
-	defer func() { _ = c.Close() }()
-
-	for {
-		mt, payload, err := c.ReadMessage()
-		if err != nil {
-			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-				h.log.Warn("ws ingest read", "err", err)
-			}
-			return
-		}
-		if mt != websocket.TextMessage && mt != websocket.BinaryMessage {
-			continue
-		}
-		var s telemetry.Sample
-		if err := json.Unmarshal(payload, &s); err != nil {
-			h.log.Warn("ws ingest json", "err", err)
-			_ = c.WriteJSON(map[string]string{"error": "bad json"})
-			continue
-		}
-		// Не используем r.Context(): на нём висит middleware.Timeout на весь HTTP-запрос;
-		// WebSocket живёт долго — после дедлайна Insert падал с context deadline exceeded.
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		ingestErr := h.processIngest(ctx, &s)
-		cancel()
-		if ingestErr != nil {
-			h.log.Warn("ws ingest", "err", ingestErr)
-			_ = c.WriteJSON(map[string]string{"error": ingestErr.Error()})
-			continue
-		}
-		_ = c.WriteJSON(map[string]any{"ok": true, "health_index": s.HealthIndex, "health_grade": s.HealthGrade})
-	}
 }
 
 func (h *Handlers) handleLatest(w http.ResponseWriter, r *http.Request) {
