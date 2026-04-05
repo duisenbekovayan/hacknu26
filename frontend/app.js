@@ -535,7 +535,7 @@
     if (!svg || !rng) return;
     function apply(pct) {
       var raw = typeof pct === "number" && !isNaN(pct) ? pct : 100;
-      var z = Math.max(100, Math.min(330, raw));
+      var z = Math.max(100, Math.min(700, raw));
       rng.value = String(z);
       if (pctEl) pctEl.textContent = z + "%";
       svg.style.width = z + "%";
