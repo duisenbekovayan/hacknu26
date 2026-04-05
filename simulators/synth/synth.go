@@ -8,6 +8,20 @@ import (
 	"hacknu/pkg/telemetry"
 )
 
+const (
+	speedMinKmh = 40
+	speedMaxKmh = 90
+
+	// ОЖ: более плавный накопительный рост (раньше за ~20 с уходило за порог health >98 °C).
+	coolantNoiseAmp   = 0.22
+	coolantSpeedCoeff = 0.0014 // было 0.004
+	coolantSpreadOut  = 0.06  // было 0.15 — меньше «наддува» показания от скорости
+
+	fuelTankMaxL     = 4600.0
+	fuelRefuelBelowL = 380.0
+	fuelRefuelStepL  = 28.0 // л за тик при низком уровне (~плавное восстановление)
+)
+
 // Synthesizer генерирует телеметрию из PRNG и внутреннего состояния (без файлов).
 type Synthesizer struct {
 	rng *rand.Rand
@@ -29,9 +43,9 @@ type Synthesizer struct {
 func NewSynthesizer(rng *rand.Rand) *Synthesizer {
 	return &Synthesizer{
 		rng:        rng,
-		speedKmh:   rng.Float64() * 5,
+		speedKmh:   speedMinKmh + rng.Float64()*(speedMaxKmh-speedMinKmh),
 		mileageKm:  rng.Float64() * 2,
-		fuelL:      3800 + rng.Float64()*800,
+		fuelL:      4000 + rng.Float64()*(fuelTankMaxL-4000),
 		lat:        51.14 + rng.Float64()*0.02,
 		lon:        71.42 + rng.Float64()*0.02,
 		coolantC:   82 + rng.Float64()*6,
@@ -57,21 +71,28 @@ func (g *Synthesizer) NextSample(trainID string) telemetry.Sample {
 	g.mileageKm += g.speedKmh / 3600.0
 	g.driftGeo()
 	g.walkTempsAndPressure()
-	g.fuelL -= g.fuelBurnPerSecond()
-	if g.fuelL < 400 {
-		g.fuelL = 3800 + g.rng.Float64()*400
+	burn := g.fuelBurnPerSecond()
+	g.fuelL -= burn
+	// Постепенная «дозаправка» у депо вместо мгновенного скачка
+	if g.fuelL < fuelRefuelBelowL {
+		g.fuelL += fuelRefuelStepL
+		if g.fuelL > fuelTankMaxL {
+			g.fuelL = fuelTankMaxL
+		}
 	}
 
 	spread := g.speedKmh * 0.12
-	fuelRate := 6 + g.speedKmh*0.38 + (g.rng.Float64()-0.5)*1.2
-	if fuelRate < 5 {
-		fuelRate = 5
+	// расход л/ч согласован с фактическим сгоранием за тик
+	fuelRate := burn * 3600
+	if fuelRate < 12 {
+		fuelRate = 12
 	}
+	fuelRate += (g.rng.Float64() - 0.5) * 0.8
 	tracA := int(math.Round(math.Max(0, g.speedKmh*11+(g.rng.Float64()-0.5)*90)))
 	lineV := int(math.Round(2720 + g.rng.Float64()*80))
 
 	return telemetry.Sample{
-		TS:                   time.Now().UTC().Format(time.RFC3339),
+		TS:                   time.Now().UTC().Format(time.RFC3339Nano),
 		TrainID:              trainID,
 		SpeedKmh:             round1(g.speedKmh),
 		FuelLevelL:           round1(g.fuelL),
@@ -79,7 +100,7 @@ func (g *Synthesizer) NextSample(trainID string) telemetry.Sample {
 		BrakePipePressureBar: clamp(g.brakeBar+(g.rng.Float64()-0.5)*0.04, 4.85, 5.15),
 		MainReservoirBar:     clamp(g.mainBar+(g.rng.Float64()-0.5)*0.06, 7.5, 9.0),
 		EngineOilPressureBar: clamp(g.oilBar+(g.rng.Float64()-0.5)*0.08, 3.4, 5.8),
-		CoolantTempC:         clamp(g.coolantC+spread*0.15+(g.rng.Float64()-0.5)*0.5, 78, 108),
+		CoolantTempC:         clamp(g.coolantC+spread*coolantSpreadOut+(g.rng.Float64()-0.5)*0.45, 78, 108),
 		EngineOilTempC:       clamp(g.engineOilC+g.speedKmh*0.06+(g.rng.Float64()-0.5)*0.4, 85, 118),
 		TractionMotorTempC:   g.motorSlice(),
 		BatteryVoltageV:      clamp(109+(g.rng.Float64()-0.5)*1.4, 102, 118),
@@ -101,7 +122,7 @@ func (g *Synthesizer) walkSpeed() {
 	default:
 		g.speedKmh += (g.rng.Float64() - 0.5) * 2.2
 	}
-	g.speedKmh = clamp(g.speedKmh, 0, 92)
+	g.speedKmh = clamp(g.speedKmh, speedMinKmh, speedMaxKmh)
 }
 
 func (g *Synthesizer) driftGeo() {
@@ -110,7 +131,7 @@ func (g *Synthesizer) driftGeo() {
 }
 
 func (g *Synthesizer) walkTempsAndPressure() {
-	g.coolantC += (g.rng.Float64()-0.5)*0.35 + g.speedKmh*0.004
+	g.coolantC += (g.rng.Float64()-0.5)*coolantNoiseAmp + g.speedKmh*coolantSpeedCoeff
 	g.engineOilC += (g.rng.Float64()-0.5)*0.25 + g.speedKmh*0.002
 	g.oilBar += (g.rng.Float64() - 0.5) * 0.06
 	g.brakeBar += (g.rng.Float64() - 0.5) * 0.02
@@ -129,7 +150,11 @@ func (g *Synthesizer) walkTempsAndPressure() {
 }
 
 func (g *Synthesizer) fuelBurnPerSecond() float64 {
-	rate := 6 + g.speedKmh*0.35 + g.rng.Float64()*0.3
+	// л/ч → л/с; чуть выше старой модели, чтобы на графике был виден плавный спад за минуты
+	rate := 26 + g.speedKmh*0.95 + (g.rng.Float64()-0.5)*0.35
+	if rate < 12 {
+		rate = 12
+	}
 	return rate / 3600.0
 }
 

@@ -1,11 +1,17 @@
 /bin/
 /dist/
 *.exe
+*.dll
+*.so
+*.dylib
 .env
 .env.local
 .env.local.ps1
 .DS_Store
+Thumbs.db
 .idea/
 .vscode/
 coverage.out
+coverage.html
+*.prof
 *.test

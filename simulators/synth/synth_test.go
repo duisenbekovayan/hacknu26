@@ -13,7 +13,7 @@ func TestNextSample_boundsAndMotors(t *testing.T) {
 		if s.TrainID != "TRAIN-X" {
 			t.Fatalf("train id")
 		}
-		if s.SpeedKmh < 0 || s.SpeedKmh > 92 {
+		if s.SpeedKmh < 40 || s.SpeedKmh > 90 {
 			t.Fatalf("speed %v out of bounds", s.SpeedKmh)
 		}
 		if len(s.TractionMotorTempC) != 6 {
@@ -30,8 +30,8 @@ func TestNextSample_boundsAndMotors(t *testing.T) {
 		if s.MainReservoirBar < 7.5 || s.MainReservoirBar > 9.0 {
 			t.Fatalf("main %v", s.MainReservoirBar)
 		}
-		if s.FuelLevelL < 400 {
-			t.Fatalf("fuel refuel broken %v", s.FuelLevelL)
+		if s.FuelLevelL < 300 || s.FuelLevelL > 5000 {
+			t.Fatalf("fuel level out of range %v", s.FuelLevelL)
 		}
 	}
 }

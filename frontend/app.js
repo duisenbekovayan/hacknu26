@@ -40,9 +40,10 @@
     speed: [],
     coolant: [],
     health: [],
+    fuel: [],
   };
 
-  let charts = { speed: null, temp: null, health: null };
+  let charts = { speed: null, temp: null, health: null, fuel: null };
   let ws = null;
   let reconnectTimer = null;
   let backoffMs = 1000;
@@ -94,7 +95,7 @@
     const a = (msgId == null ? "" : String(msgId)).trim();
     const b = (selectedId == null ? "" : String(selectedId)).trim();
     if (!a) return true;
-    return a === b;
+    return a.toLowerCase() === b.toLowerCase();
   }
 
   function setConnected(ok, text) {
@@ -293,43 +294,43 @@
   }
 
   /**
-   * Астана-1 — Шымкент: км вдоль линии пропорционально «времени в пути» из расписания (~24 ч → 1650 км условно).
-   * Станции: тот же порядок, что в вашем расписании.
+   * Астана-1 — Шымкент: км вдоль линии пропорционально «времени в пути» из расписания.
+   * Полная длина ~1500 км — ориентир по протяжённости главного хода (реальная длина по путям может отличаться).
    */
   const ROUTE = {
-    loopKm: 1650,
+    loopKm: 1500,
     settlements: [
       { km: 0, name: "Астана-1", major: true },
-      { km: 220, name: "Караганды-Сорт." },
-      { km: 270, name: "Караганды-Пасс." },
-      { km: 406, name: "Жарык" },
-      { km: 476, name: "Акадыр" },
-      { km: 632, name: "Мойынты" },
-      { km: 740, name: "Сары-Шаган" },
-      { km: 881, name: "Шыганак" },
-      { km: 1095, name: "Шу" },
-      { km: 1227, name: "Турксиб", title: "Турксиб (бывш. Луговая)" },
-      { km: 1353, name: "Тараз" },
-      { km: 1476, name: "Боранды" },
-      { km: 1535, name: "Тюлькубас" },
-      { km: 1608, name: "Манкент" },
-      { km: 1650, name: "Шымкент", major: true },
+      { km: 200, name: "Караганды-Сорт." },
+      { km: 245, name: "Караганды-Пасс." },
+      { km: 369, name: "Жарык" },
+      { km: 433, name: "Акадыр" },
+      { km: 575, name: "Мойынты" },
+      { km: 673, name: "Сары-Шаган" },
+      { km: 801, name: "Шыганак" },
+      { km: 995, name: "Шу" },
+      { km: 1115, name: "Турксиб", title: "Турксиб (бывш. Луговая)" },
+      { km: 1230, name: "Тараз" },
+      { km: 1342, name: "Боранды" },
+      { km: 1395, name: "Тюлькубас" },
+      { km: 1462, name: "Манкент" },
+      { km: 1500, name: "Шымкент", major: true },
     ],
     segments: [
-      { from: 0, to: 220, vMax: 90, restriction: "" },
-      { from: 220, to: 270, vMax: 85, restriction: "" },
-      { from: 270, to: 406, vMax: 90, restriction: "" },
-      { from: 406, to: 476, vMax: 90, restriction: "" },
-      { from: 476, to: 632, vMax: 95, restriction: "" },
-      { from: 632, to: 740, vMax: 90, restriction: "" },
-      { from: 740, to: 881, vMax: 90, restriction: "" },
-      { from: 881, to: 1095, vMax: 95, restriction: "Длинный перегон" },
-      { from: 1095, to: 1227, vMax: 90, restriction: "" },
-      { from: 1227, to: 1353, vMax: 90, restriction: "" },
-      { from: 1353, to: 1476, vMax: 85, restriction: "" },
-      { from: 1476, to: 1535, vMax: 80, restriction: "" },
-      { from: 1535, to: 1608, vMax: 85, restriction: "" },
-      { from: 1608, to: 1650, vMax: 70, restriction: "Подход к Шымкенту" },
+      { from: 0, to: 200, vMax: 90, restriction: "" },
+      { from: 200, to: 245, vMax: 85, restriction: "" },
+      { from: 245, to: 369, vMax: 90, restriction: "" },
+      { from: 369, to: 433, vMax: 90, restriction: "" },
+      { from: 433, to: 575, vMax: 95, restriction: "" },
+      { from: 575, to: 673, vMax: 90, restriction: "" },
+      { from: 673, to: 801, vMax: 90, restriction: "" },
+      { from: 801, to: 995, vMax: 95, restriction: "Длинный перегон" },
+      { from: 995, to: 1115, vMax: 90, restriction: "" },
+      { from: 1115, to: 1230, vMax: 90, restriction: "" },
+      { from: 1230, to: 1342, vMax: 85, restriction: "" },
+      { from: 1342, to: 1395, vMax: 80, restriction: "" },
+      { from: 1395, to: 1462, vMax: 85, restriction: "" },
+      { from: 1462, to: 1500, vMax: 70, restriction: "Подход к Шымкенту" },
     ],
   };
 
@@ -534,7 +535,7 @@
     if (!svg || !rng) return;
     function apply(pct) {
       var raw = typeof pct === "number" && !isNaN(pct) ? pct : 100;
-      var z = Math.max(100, Math.min(220, raw));
+      var z = Math.max(100, Math.min(330, raw));
       rng.value = String(z);
       if (pctEl) pctEl.textContent = z + "%";
       svg.style.width = z + "%";
@@ -813,6 +814,7 @@
     buffers.speed = [];
     buffers.coolant = [];
     buffers.health = [];
+    buffers.fuel = [];
   }
 
   function pushBuffers(s) {
@@ -821,11 +823,13 @@
     buffers.speed.push(s.speed_kmh ?? null);
     buffers.coolant.push(s.coolant_temp_c ?? null);
     buffers.health.push(s.health_index ?? null);
+    buffers.fuel.push(s.fuel_level_l ?? null);
     while (buffers.labels.length > MAX_POINTS) {
       buffers.labels.shift();
       buffers.speed.shift();
       buffers.coolant.shift();
       buffers.health.shift();
+      buffers.fuel.shift();
     }
   }
 
@@ -848,9 +852,6 @@
           wheel: { enabled: true },
           pinch: { enabled: true },
           mode: "x",
-        },
-        limits: {
-          x: { min: "original", max: "original", minRange: 2 },
         },
       };
     }
@@ -885,6 +886,7 @@
     const accent = cssVar("--accent", "#58a6ff");
     const ok = cssVar("--ok", "#3fb950");
     const warn = cssVar("--warn", "#f0883e");
+    const fuelCol = cssVar("--chart-fuel", "#c9a227");
 
     charts.speed = new Chart(document.getElementById("chartSpeed"), {
       type: "line",
@@ -910,6 +912,16 @@
       },
       options: chartOpts("Индекс здоровья"),
     });
+    charts.health.options.scales.y.min = 0;
+    charts.health.options.scales.y.max = 100;
+    charts.fuel = new Chart(document.getElementById("chartFuel"), {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [{ label: "л", data: [], borderColor: fuelCol, tension: 0.25, fill: false }],
+      },
+      options: chartOpts("Топливо"),
+    });
   }
 
   function syncChartTheme() {
@@ -917,31 +929,50 @@
     const accent = cssVar("--accent", "#58a6ff");
     const ok = cssVar("--ok", "#3fb950");
     const warn = cssVar("--warn", "#f0883e");
+    const fuelCol = cssVar("--chart-fuel", "#c9a227");
     const grid = cssVar("--border", "#30363d");
     const text = cssVar("--muted", "#8b949e");
     charts.speed.data.datasets[0].borderColor = accent;
     charts.temp.data.datasets[0].borderColor = warn;
     charts.health.data.datasets[0].borderColor = ok;
-    ["speed", "temp", "health"].forEach(function (k) {
+    charts.fuel.data.datasets[0].borderColor = fuelCol;
+    ["speed", "temp", "health", "fuel"].forEach(function (k) {
       const ch = charts[k];
       ch.options.plugins.title.color = text;
       ch.options.scales.x.ticks.color = text;
       ch.options.scales.y.ticks.color = text;
       ch.options.scales.x.grid.color = grid;
       ch.options.scales.y.grid.color = grid;
-      ch.update("none");
+      ch.update();
     });
   }
 
   function updateCharts() {
     if (!charts.speed) return;
-    ["speed", "temp", "health"].forEach(function (k, i) {
-      const ds = i === 0 ? buffers.speed : i === 1 ? buffers.coolant : buffers.health;
+    const series = [
+      ["speed", buffers.speed],
+      ["temp", buffers.coolant],
+      ["health", buffers.health],
+      ["fuel", buffers.fuel],
+    ];
+    series.forEach(function (row) {
+      const k = row[0];
+      const ds = row[1];
       const ch = charts[k];
       ch.data.labels = buffers.labels.slice();
       ch.data.datasets[0].data = ds.slice();
       ch.options.scales.x.display = buffers.labels.length > 2;
-      ch.update("none");
+      const ys = ch.options.scales && ch.options.scales.y;
+      if (ys) {
+        if (k === "health") {
+          ys.min = 0;
+          ys.max = 100;
+        } else {
+          ys.min = undefined;
+          ys.max = undefined;
+        }
+      }
+      ch.update();
     });
   }
 
@@ -1206,6 +1237,12 @@
         "Chart.js не загрузился (проверьте интернет / CDN). Графики отключены; метрики и WebSocket работают."
       );
     }
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible" && !replayMode) {
+        pollLatest();
+      }
+    });
+
     loadHistoryLive()
       .catch(function () {})
       .then(function () {

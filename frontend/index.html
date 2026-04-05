@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Кабина — цифровой двойник</title>
-  <link rel="stylesheet" href="/static/styles.css?v=14" />
+  <link rel="stylesheet" href="/static/styles.css?v=19" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" defer></script>
-  <script src="/static/app.js?v=14" defer></script>
+  <script src="/static/app.js?v=19" defer></script>
 </head>
 <body>
   <div class="app">
@@ -111,6 +111,7 @@
           <div class="chart-wrap"><canvas id="chartSpeed" height="120"></canvas></div>
           <div class="chart-wrap"><canvas id="chartTemp" height="120"></canvas></div>
           <div class="chart-wrap"><canvas id="chartHealth" height="120"></canvas></div>
+          <div class="chart-wrap"><canvas id="chartFuel" height="120"></canvas></div>
         </div>
       </section>
 
@@ -118,12 +119,12 @@
         <h2 class="card-title">Участок пути <span class="muted small">· схема · НП · ограничения</span></h2>
         <p class="map-intro muted small">
           Маршрут <strong>Астана-1 — Шымкент</strong> (станции по расписанию на 4–5 апр.). Километраж по пути пропорционален
-          <strong>времени в пути</strong> от отправления с Астаны; условная длина линии <strong>1650 км</strong>. Положение —
+          <strong>времени в пути</strong> от отправления с Астаны; длина линии на схеме <strong>~1500 км</strong> (ориентир по главному ходу). Положение —
           <code>mileage_km</code> по модулю длины; координаты — линейная интерполяция Астана → Шымкент.
         </p>
         <div class="map-zoom-toolbar" aria-label="Масштаб схемы">
           <span class="muted small">Масштаб:</span>
-          <input type="range" id="mapZoom" min="100" max="220" value="100" title="Увеличение схемы от ширины карточки" />
+          <input type="range" id="mapZoom" min="100" max="330" value="100" title="Увеличение схемы от ширины карточки" />
           <span id="mapZoomPct" class="muted small">100%</span>
           <button type="button" class="btn ghost" id="mapZoomReset">Сброс</button>
           <span class="muted small map-zoom-hint">100% — по ширине блока; выше — увеличение и прокрутка · вектор, без растягивания</span>
