@@ -4,14 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Кабина — цифровой двойник</title>
-  <link rel="stylesheet" href="/static/styles.css?v=11" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
-  <script src="/static/app.js?v=11" defer></script>
-  <link rel="stylesheet" href="/static/styles.css?v=7" />
+  <link rel="stylesheet" href="/static/styles.css?v=14" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" defer></script>
-  <script src="/static/app.js?v=7" defer></script>
+  <script src="/static/app.js?v=14" defer></script>
 </head>
 <body>
   <div class="app">
@@ -33,34 +30,34 @@
       </div>
     </header>
 
-    <section class="card ai-block ai-block-top" aria-label="ИИ-помощник">
+    <section class="card ai-block-top" aria-label="ИИ-помощник машиниста">
       <div class="ai-head">
         <div class="ai-head-text">
           <h2 class="card-title">ИИ-помощник машиниста</h2>
-          <p class="muted small" id="aiStatusLine">проверка API…</p>
+          <p id="aiStatusLine" class="muted small">проверка…</p>
         </div>
         <div class="ai-actions">
           <button type="button" class="btn primary" id="btnAIExplain">Объяснить состояние</button>
-          <button type="button" class="btn ghost" id="btnAIActions">Что делать?</button>
+          <button type="button" class="btn ghost" id="btnAIActions" disabled>Что делать?</button>
         </div>
       </div>
+      <p id="aiErr" class="muted small" style="color: var(--bad)" hidden></p>
       <div id="aiPanel" class="ai-panel" hidden>
-        <div class="ai-severity" id="aiSeverity"></div>
-        <p class="ai-summary" id="aiSummary"></p>
+        <div id="aiSeverity" class="ai-severity" data-sev="normal">—</div>
+        <p id="aiSummary" class="ai-summary"></p>
         <div class="ai-cols">
           <div>
-            <h3 class="ai-h">Вероятные причины</h3>
-            <ul class="ai-list" id="aiCauses"></ul>
+            <p class="ai-h">Вероятные причины</p>
+            <ul id="aiCauses" class="ai-list"></ul>
           </div>
           <div>
-            <h3 class="ai-h">Рекомендации</h3>
-            <ul class="ai-list" id="aiRecs"></ul>
+            <p class="ai-h">Рекомендации</p>
+            <ul id="aiRecs" class="ai-list"></ul>
           </div>
         </div>
-        <p class="muted small ai-metrics" id="aiMetrics"></p>
-        <p class="ai-risk" id="aiRisk" hidden></p>
+        <p id="aiMetrics" class="ai-metrics muted small"></p>
+        <p id="aiRisk" class="ai-risk" hidden></p>
       </div>
-      <p class="ai-err muted small" id="aiErr" hidden></p>
     </section>
 
     <main class="grid">
@@ -118,35 +115,41 @@
       </section>
 
       <section class="card map-block" aria-label="Участок пути">
-        <h2 class="card-title">Участок пути <span class="muted small">(схема · НП · ограничения)</span></h2>
-        <p class="muted small map-intro">
-          Условный перегон в стиле схемы маршрута: населённые пункты, длины между ними, зоны Vmax. Положение состава по
-          <code>mileage_km</code> (цикл по длине участка).
+        <h2 class="card-title">Участок пути <span class="muted small">· схема · НП · ограничения</span></h2>
+        <p class="map-intro muted small">
+          Маршрут <strong>Астана-1 — Шымкент</strong> (станции по расписанию на 4–5 апр.). Километраж по пути пропорционален
+          <strong>времени в пути</strong> от отправления с Астаны; условная длина линии <strong>1650 км</strong>. Положение —
+          <code>mileage_km</code> по модулю длины; координаты — линейная интерполяция Астана → Шымкент.
         </p>
-        <div class="map-svg" role="img" aria-label="Схема маршрута с населёнными пунктами и положением состава">
-          <svg id="routeSvg" viewBox="0 0 520 172" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+        <div class="map-zoom-toolbar" aria-label="Масштаб схемы">
+          <span class="muted small">Масштаб:</span>
+          <input type="range" id="mapZoom" min="100" max="220" value="100" title="Увеличение схемы от ширины карточки" />
+          <span id="mapZoomPct" class="muted small">100%</span>
+          <button type="button" class="btn ghost" id="mapZoomReset">Сброс</button>
+          <span class="muted small map-zoom-hint">100% — по ширине блока; выше — увеличение и прокрутка · вектор, без растягивания</span>
+        </div>
+        <div class="map-svg map-svg--scroll" role="img" aria-label="Схема маршрута и положение состава">
+          <svg id="routeSvg" viewBox="0 0 8200 220" preserveAspectRatio="xMinYMid meet" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <linearGradient id="railGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" class="stop-a" />
                 <stop offset="100%" class="stop-b" />
               </linearGradient>
             </defs>
-            <rect class="map-bg" x="0" y="0" width="520" height="172" rx="8" />
+            <rect class="map-bg" x="0" y="0" width="8200" height="220" rx="10" />
             <g id="routeZones"></g>
             <g id="routeRail"></g>
             <g id="routeSegKm"></g>
             <g id="routeRestrictions"></g>
             <g id="routeStations"></g>
-            <circle id="mapDot" cx="260" cy="58" r="8" class="map-dot" />
-            <text id="mapCaption" x="260" y="148" text-anchor="middle" class="map-caption">—</text>
-            <text id="mapSubcaption" x="260" y="162" text-anchor="middle" class="map-subcaption"></text>
+            <circle id="mapDot" cx="4100" cy="110" r="9" class="map-dot" />
           </svg>
         </div>
-        <div class="map-legend" id="mapLegend" aria-hidden="true"></div>
-
-        <h3 class="map-gmap-title">Карта (Google Maps)</h3>
-        <p class="muted small" id="gmapHint">проверка ключа…</p>
-        <div id="gmap" class="gmap-wrap" hidden></div>
+        <p class="map-caption-html" id="mapCaption">—</p>
+        <p class="map-subcaption-html muted small" id="mapSubcaption"></p>
+        <p class="map-restr-title muted small">Ограничения по перегонам (Vmax, условно):</p>
+        <div class="map-restrictions" id="mapRestrictions"></div>
+        <div class="map-legend" id="mapLegend"></div>
       </section>
 
       <section class="card motors" aria-label="Тяговые двигатели">

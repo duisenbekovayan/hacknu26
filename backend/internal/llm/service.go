@@ -116,9 +116,11 @@ func buildPrompts(in AnalyzeInput) (systemPrompt string, userPrompt string, err 
 Правила:
 - Не выдумывай датчики, которых нет в snapshot
 - Не пиши длинных объяснений
-- Учитывай alerts и health_index
-- Если ситуация безопасна — так и скажи
-- Если есть риск — дай 2–4 конкретных действия
+- Индекс здоровья health_index и health_grade рассчитаны бортовой формулой — это главный ориентир. Поле health_top_factors перечисляет реальные штрафы (перегревы, давления и т.д.).
+- Соответствие severity и индекса: при health_index < 40 severity обязан быть "critical"; при 40–59 — минимум "warning"; "normal" только при health_index >= 60 (и отсутствии критичных факторов).
+- Учитывай coolant_temp_c, engine_oil_temp_c, traction_motor_temp_c, alerts
+- Если ситуация безопасна по индексу — так и скажи
+- Если есть риск — дай 2–4 конкретных действия; probable_causes должны согласовываться с health_top_factors при низком индексе
 - Поле next_risk: кратко (1 предложение), что может случиться при сохранении тренда; если не уместно — пустая строка
 - Отвечай ТОЛЬКО валидным JSON без markdown и без текста вокруг
 
@@ -218,5 +220,55 @@ func (s *Service) Analyze(ctx context.Context, in AnalyzeInput) (*AnalyzeOutput,
 		return nil, fmt.Errorf("invalid llm json: %w", err)
 	}
 
+	alignAIOutputWithHealth(in, &out)
 	return &out, nil
+}
+
+// alignAIOutputWithHealth подправляет ответ модели, если она игнорирует рассчитанный индекс.
+func alignAIOutputWithHealth(in AnalyzeInput, out *AnalyzeOutput) {
+	if out == nil {
+		return
+	}
+	sev := strings.ToLower(strings.TrimSpace(out.Severity))
+	hi := in.HealthIndex
+	grade := strings.TrimSpace(in.HealthGrade)
+
+	switch {
+	case hi < 40 && sev == "normal":
+		out.Severity = "critical"
+		var b strings.Builder
+		fmt.Fprintf(&b, "Индекс здоровья %.0f", hi)
+		if grade != "" {
+			fmt.Fprintf(&b, " (оценка %s)", grade)
+		}
+		b.WriteString(" — критическое состояние по формуле дашборда.")
+		if len(in.HealthTopFactors) > 0 {
+			b.WriteString(" Основные штрафы: ")
+			for i, f := range in.HealthTopFactors {
+				if i >= 4 {
+					break
+				}
+				if i > 0 {
+					b.WriteString("; ")
+				}
+				fmt.Fprintf(&b, "%s −%.1f", f.Factor, f.Penalty)
+			}
+			b.WriteString(".")
+		}
+		out.Summary = b.String()
+	case hi >= 40 && hi < 60 && sev == "normal":
+		out.Severity = "warning"
+		if !strings.Contains(strings.ToLower(out.Summary), "вниман") && !strings.Contains(strings.ToLower(out.Summary), "ниже норм") {
+			out.Summary = fmt.Sprintf("Индекс здоровья %.0f — ниже нормы (требуется внимание). ", hi) + out.Summary
+		}
+	}
+
+	if hi < 60 && len(out.ProbableCauses) == 0 && len(in.HealthTopFactors) > 0 {
+		for _, f := range in.HealthTopFactors {
+			if len(out.ProbableCauses) >= 5 {
+				break
+			}
+			out.ProbableCauses = append(out.ProbableCauses, fmt.Sprintf("%s (−%.1f к индексу)", f.Factor, f.Penalty))
+		}
+	}
 }

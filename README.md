@@ -31,7 +31,7 @@
 docker compose up -d
 ```
 
-Ключи **ИИ** и **Google Maps** положите в файл **`.env`** в корне репозитория (`GEMINI_API_KEY` / `OPENAI_API_KEY`, при необходимости `GOOGLE_MAPS_API_KEY`). Docker Compose подставляет их в сервис `backend`; без этого в контейнере ИИ и карта будут отключены, хотя при локальном `go run` всё работает. После смены `.env` перезапустите backend: `docker compose up -d --force-recreate backend`.
+Ключи **ИИ** положите в файл **`.env`** в корне репозитория (`GEMINI_API_KEY` / `OPENAI_API_KEY`). Docker Compose подставляет их в сервис `backend`; без этого в контейнере ИИ будет отключён. На дашборде — **линейная схема** маршрута Астана — Шымкент (станции по расписанию). После смены `.env` перезапустите backend: `docker compose up -d --force-recreate backend`.
 
 Симулятор в compose публикует raw в RabbitMQ (`train=LOC-DEMO-001`, интервал 1 с). Параметры можно сменить в `docker-compose.yml` (`command:` у сервиса `simulator`) или собрать образ с другим `CMD` в `simulators/Dockerfile`.
 
@@ -116,7 +116,7 @@ go run ./simulators/cmd/simulator -train LOC-DEMO-001
 | `OPENAI_BASE_URL` | Для **OpenRouter**: `https://openrouter.ai/api/v1`. Для ключей `sk-or-v1-…` база подставляется автоматически, если пусто. |
 | `OPENAI_USE_CHAT` | `1` — принудительно **Chat Completions** вместо Responses API (нужно для OpenRouter и многих прокси). Ключи `sk-or-v1-…` включают chat сами. |
 | Файл `.env` | В корне репо (см. `env.example`): подставляется при старте процесса, если переменная ещё не задана. Удобно при запуске из IDE без `run.ps1`. |
-| `GOOGLE_MAPS_API_KEY` | Ключ [Maps JavaScript API](https://developers.google.com/maps/documentation/javascript) для блока «Карта» на дашборде (маркер по `lat`/`lon` из телеметрии). В Google Cloud ограничьте ключ по HTTP referrer и включите биллинг. Без ключа блок скрыт, подсказка в UI. |
+| `GOOGLE_MAPS_API_KEY` | Не используется текущим UI (схема без Google Maps). Эндпоинт `/api/v1/config` может отдавать ключ для других клиентов. |
 | `NORMALIZER_ENABLE_SMOOTHING` | Включить EMA сглаживание (`true/false`) |
 | `NORMALIZER_ENABLE_DEDUP` | Включить дедупликацию (`true/false`) |
 | `NORMALIZER_DEDUP_WINDOW_MS` | Окно дедупликации в миллисекундах |
