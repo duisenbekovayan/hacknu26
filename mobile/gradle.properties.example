@@ -1,0 +1,7 @@
+# Copy this file to gradle.properties and fill in the values
+
+# The base URL for the locomotive backend API
+BACKEND_URL=http://your-api-url:8080/
+
+# Optional: AI Service configurations if separate from main backend
+# AI_SERVICE_URL=http://your-ai-url:8081/

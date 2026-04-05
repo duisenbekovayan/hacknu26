@@ -15,6 +15,7 @@
 | `backend/internal/` | API, БД, health, store, WebSocket, **llm** (ИИ-разбор по запросу) |
 | `normalizer/cmd/normalizer` | Отдельный микросервис normalizer (отдельный binary) |
 | `normalizer/internal/` | Config, consumer и stateful preprocessing логика |
+| `mobile/` | Android-приложение (Kotlin, Jetpack Compose, Material 3) |
 | `backend/internal/` | API, БД, health, store, WebSocket |
 | `simulators/cmd/simulator` | CLI: публикация JSON только в **RabbitMQ** |
 | `pkg/rabbitmq` | Имена exchange/очередей (`raw/normalized/dlq`) и объявление топологии |
@@ -138,6 +139,31 @@ go test ./... -count=1
 Интеграционный тест в `backend/internal/store` без Postgres пропускается. `SKIP_INTEGRATION=1 go test ./...` — без интеграции.
 
 Спецификация API: `openapi.yaml`.
+
+## Мобильное приложение (Android)
+
+Находится в папке `mobile/`. Профессиональный дашборд на **Kotlin** и **Jetpack Compose**.
+
+### Возможности мобильного приложения:
+- **Телеметрия в реальном времени**: Отображение всех критических параметров (скорость, топливо, давление, температуры ТЭД).
+- **Индекс здоровья**: Визуальный индикатор состояния локомотива (Зеленый/Желтый/Красный).
+- **ИИ-ассистент (OpenAI/OpenRouter)**: Кнопки «Объяснить» и «Что делать?» для получения интеллектуальной расшифровки аномалий.
+- **Режим Replay**: Возможность прокрутки истории телеметрии прямо на смартфоне.
+- **Интерактивная карта**: Линейная схема маршрута с привязкой к километражу и ограничениям скорости.
+- **Тренды**: Графики изменения параметров за последние 5/10/15 минут.
+
+### Настройка ИИ в мобильном приложении:
+Добавьте ключ в `mobile/local.properties`:
+```properties
+OPENAI_API_KEY=sk-or-v1-...
+```
+По умолчанию используется **OpenRouter** (`openai/gpt-4o-mini`).
+
+### Сборка:
+```bash
+cd mobile
+./gradlew :app:assembleDebug
+```
 
 ## Индекс здоровья (прозрачная формула)
 

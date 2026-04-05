@@ -5,6 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import com.example.mobile.dashboard.DashboardViewModel
 import com.example.mobile.ui.dashboard.DashboardScreen
 import com.example.mobile.ui.theme.MobileTheme
@@ -21,7 +24,8 @@ class MainActivity : ComponentActivity() {
         viewModel.startPolling("LOC-DEMO-001")
 
         setContent {
-            MobileTheme {
+            val isDarkTheme by viewModel.isDarkTheme.observeAsState()
+            MobileTheme(darkTheme = isDarkTheme ?: isSystemInDarkTheme()) {
                 DashboardScreen(viewModel)
             }
         }

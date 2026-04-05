@@ -9,6 +9,7 @@ html[data-theme="dark"] {
   --muted: #8b949e;
   --accent: #58a6ff;
   --ok: #3fb950;
+  --chart-fuel: #c9a227;
   --warn: #d29922;
   --bad: #f85149;
   --ring-track: #21262d;
@@ -23,6 +24,7 @@ html[data-theme="light"] {
   --text: #1f2328;
   --muted: #57606a;
   --accent: #0969da;
+  --chart-fuel: #9a6700;
   --ring-track: #eaeef2;
 }
 
@@ -784,17 +786,23 @@ body {
 
 .map-svg--wide .map-np-name,
 .map-svg--scroll .map-np-name {
-  font-size: 11px;
+  font-size: 44px;
+  text-rendering: optimizeLegibility;
 }
 
 .map-svg--wide .map-np-km,
 .map-svg--scroll .map-np-km {
-  font-size: 10px;
+  font-size: 30px;
+  text-rendering: optimizeLegibility;
 }
 
 .map-svg--wide .map-seg-km,
 .map-svg--scroll .map-seg-km {
-  font-size: 9px;
+  font-size: 30px;
+}
+
+.map-svg--scroll .map-restr {
+  font-size: 18px;
 }
 
 .map-bg {
@@ -862,18 +870,18 @@ body {
 
 .map-np-name {
   fill: var(--text);
-  font-size: 10px;
+  font-size: 30px;
   font-weight: 600;
 }
 
 .map-np-km {
   fill: var(--muted);
-  font-size: 8.5px;
+  font-size: 20px;
 }
 
 .map-seg-km {
   fill: var(--bad);
-  font-size: 9.5px;
+  font-size: 20px;
   font-weight: 600;
 }
 
@@ -896,7 +904,7 @@ body {
 
 .map-restr {
   fill: var(--warn);
-  font-size: 9px;
+  font-size: 20px;
 }
 
 .map-dot {

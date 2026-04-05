@@ -8,16 +8,41 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF448AFF),
-    secondary = Color(0xFF69F0AE),
-    tertiary = Color(0xFFFFD740),
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
+    primary = AccentDark,
+    secondary = OkDark,
+    tertiary = WarnDark,
+    background = BgDark,
+    surface = SurfaceDark,
     onPrimary = Color.White,
-    onSecondary = Color.Black,
+    onSecondary = Color.White,
     onTertiary = Color.Black,
-    onBackground = Color.White,
-    onSurface = Color.White,
+    onBackground = TextDark,
+    onSurface = TextDark,
+    surfaceVariant = RingTrackDark,
+    outline = BorderDark,
+    error = BadDark,
+    secondaryContainer = FuelDark,
+    onSecondaryContainer = Color.White,
+    outlineVariant = MutedDark
+)
+
+private val LightColorScheme = lightColorScheme(
+    primary = AccentLight,
+    secondary = OkLight,
+    tertiary = WarnLight,
+    background = BgLight,
+    surface = SurfaceLight,
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onTertiary = Color.White,
+    onBackground = TextLight,
+    onSurface = TextLight,
+    surfaceVariant = RingTrackLight,
+    outline = BorderLight,
+    error = BadLight,
+    secondaryContainer = FuelLight,
+    onSecondaryContainer = Color.White,
+    outlineVariant = MutedLight
 )
 
 @Composable
@@ -25,7 +50,7 @@ fun MobileTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = DarkColorScheme // We're using a dark theme for the locomotive dashboard
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,

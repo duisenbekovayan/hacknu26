@@ -40,7 +40,16 @@ type Factor struct {
 	Penalty float64 `json:"penalty"`
 }
 
-// ParsedTime возвращает время записи для БД.
+// ParsedTime возвращает время записи для БД (RFC3339 или с долями секунды).
 func (s Sample) ParsedTime() (time.Time, error) {
-	return time.Parse(time.RFC3339, s.TS)
+	return ParseSampleTS(s.TS)
+}
+
+// ParseSampleTS принимает метку как в JSON (RFC3339 / RFC3339Nano).
+func ParseSampleTS(ts string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339Nano, ts)
+	if err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, ts)
 }

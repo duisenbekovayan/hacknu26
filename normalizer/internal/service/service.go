@@ -186,13 +186,20 @@ func NormalizeSample(in *telemetry.Sample) (*telemetry.Sample, error) {
 func normalizeTS(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return time.Now().UTC().Format(time.RFC3339), nil
+		return time.Now().UTC().Format(time.RFC3339Nano), nil
 	}
-	parsed, err := time.Parse(time.RFC3339, trimmed)
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrTSInvalid, err)
+	tNano, err1 := time.Parse(time.RFC3339Nano, trimmed)
+	tStd, err2 := time.Parse(time.RFC3339, trimmed)
+	var parsed time.Time
+	switch {
+	case err1 == nil:
+		parsed = tNano
+	case err2 == nil:
+		parsed = tStd
+	default:
+		return "", fmt.Errorf("%w: %v", ErrTSInvalid, err1)
 	}
-	return parsed.UTC().Format(time.RFC3339), nil
+	return parsed.UTC().Format(time.RFC3339Nano), nil
 }
 
 func sanitizeTractionMotorTemps(in []float64) []float64 {
