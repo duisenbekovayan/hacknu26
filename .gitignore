@@ -3,6 +3,7 @@
 *.exe
 .env
 .env.local
+.env.local.ps1
 .DS_Store
 .idea/
 .vscode/

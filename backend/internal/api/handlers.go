@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"hacknu/backend/internal/health"
+	"hacknu/backend/internal/llm"
 	"hacknu/backend/internal/store"
 	wshub "hacknu/backend/internal/ws"
 	"hacknu/pkg/telemetry"
@@ -32,11 +33,12 @@ type Handlers struct {
 	log   *slog.Logger
 	store *store.Telemetry
 	hub   *wshub.Hub
+	ai    *llm.Service
 }
 
 // NewHandlers регистрирует обработчики.
-func NewHandlers(log *slog.Logger, st *store.Telemetry, hub *wshub.Hub) *Handlers {
-	return &Handlers{log: log, store: st, hub: hub}
+func NewHandlers(log *slog.Logger, st *store.Telemetry, hub *wshub.Hub, ai *llm.Service) *Handlers {
+	return &Handlers{log: log, store: st, hub: hub, ai: ai}
 }
 
 func (h *Handlers) Routes(r chi.Router) {
@@ -44,6 +46,9 @@ func (h *Handlers) Routes(r chi.Router) {
 	r.Post("/api/v1/telemetry", h.handleIngest)
 	r.Get("/api/v1/telemetry/latest", h.handleLatest)
 	r.Get("/api/v1/telemetry/history", h.handleHistory)
+	r.Get("/api/v1/ai/status", h.handleAIStatus)
+	r.Post("/api/v1/ai/analyze", h.handleAIAnalyze)
+	r.Get("/api/v1/config", h.handlePublicConfig)
 }
 
 // WSTelemetry — поток для дашборда; регистрировать без middleware.Timeout (долгое соединение).

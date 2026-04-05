@@ -24,7 +24,8 @@ services:
       POSTGRES_PASSWORD: hacknu
       POSTGRES_DB: locomotive
     ports:
-      - "5432:5432"
+      # Host 5433 avoids clash with a local PostgreSQL install bound to 5432 (common on dev machines).
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -70,6 +71,14 @@ services:
       RABBITMQ_URL: amqp://hacknu:hacknu@rabbitmq:5672/
       HTTP_ADDR: :8080
       FRONTEND_DIR: /app/frontend
+      # Из `.env` в корне проекта (Compose подставляет при `docker compose up`).
+      # Без этого ИИ и карта в контейнере «пустые», хотя локально `go run` видит ключи.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_USE_CHAT: ${OPENAI_USE_CHAT:-}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     depends_on:
       rabbitmq:
         condition: service_healthy

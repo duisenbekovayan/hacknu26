@@ -10,6 +10,11 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/backend-service ./bac
 FROM debian:bookworm-slim
 WORKDIR /app
 
+# Иначе HTTPS к OpenRouter/Gemini из контейнера: x509: certificate signed by unknown authority
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 RUN useradd -u 10001 -m appuser
 COPY --from=build /out/backend-service /app/backend-service
 COPY frontend /app/frontend

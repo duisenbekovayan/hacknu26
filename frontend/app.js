@@ -15,6 +15,18 @@
   const lastTs = document.getElementById("lastTs");
   const mapDot = document.getElementById("mapDot");
   const mapCaption = document.getElementById("mapCaption");
+  const mapSubcaption = document.getElementById("mapSubcaption");
+  const aiStatusLine = document.getElementById("aiStatusLine");
+  const btnAIExplain = document.getElementById("btnAIExplain");
+  const btnAIActions = document.getElementById("btnAIActions");
+  const aiPanel = document.getElementById("aiPanel");
+  const aiSeverity = document.getElementById("aiSeverity");
+  const aiSummary = document.getElementById("aiSummary");
+  const aiCauses = document.getElementById("aiCauses");
+  const aiRecs = document.getElementById("aiRecs");
+  const aiMetrics = document.getElementById("aiMetrics");
+  const aiRisk = document.getElementById("aiRisk");
+  const aiErr = document.getElementById("aiErr");
   const btnTheme = document.getElementById("btnTheme");
   const replayMinutesEl = document.getElementById("replayMinutes");
   const btnLoadReplay = document.getElementById("btnLoadReplay");
@@ -41,6 +53,8 @@
   let replayIndex = 0;
   let playTimer = null;
   let playing = false;
+  let lastSample = null;
+  let aiEnabled = false;
 
   const metricDefs = [
     ["speed_kmh", "Скорость", "км/ч"],
@@ -148,6 +162,7 @@
   }
 
   function renderDashboard(s) {
+    lastSample = s;
     const hi = typeof s.health_index === "number" ? s.health_index : 0;
     healthValue.textContent = fmt(hi, 0);
     healthGrade.textContent = s.health_grade || "—";
@@ -277,25 +292,520 @@
     return d.innerHTML;
   }
 
-  let latMin = 51.1,
-    latMax = 51.2,
-    lonMin = 71.4,
-    lonMax = 71.5;
+  /**
+   * Астана-1 — Шымкент: км вдоль линии пропорционально «времени в пути» из расписания (~24 ч → 1650 км условно).
+   * Станции: тот же порядок, что в вашем расписании.
+   */
+  const ROUTE = {
+    loopKm: 1650,
+    settlements: [
+      { km: 0, name: "Астана-1", major: true },
+      { km: 220, name: "Караганды-Сорт." },
+      { km: 270, name: "Караганды-Пасс." },
+      { km: 406, name: "Жарык" },
+      { km: 476, name: "Акадыр" },
+      { km: 632, name: "Мойынты" },
+      { km: 740, name: "Сары-Шаган" },
+      { km: 881, name: "Шыганак" },
+      { km: 1095, name: "Шу" },
+      { km: 1227, name: "Турксиб", title: "Турксиб (бывш. Луговая)" },
+      { km: 1353, name: "Тараз" },
+      { km: 1476, name: "Боранды" },
+      { km: 1535, name: "Тюлькубас" },
+      { km: 1608, name: "Манкент" },
+      { km: 1650, name: "Шымкент", major: true },
+    ],
+    segments: [
+      { from: 0, to: 220, vMax: 90, restriction: "" },
+      { from: 220, to: 270, vMax: 85, restriction: "" },
+      { from: 270, to: 406, vMax: 90, restriction: "" },
+      { from: 406, to: 476, vMax: 90, restriction: "" },
+      { from: 476, to: 632, vMax: 95, restriction: "" },
+      { from: 632, to: 740, vMax: 90, restriction: "" },
+      { from: 740, to: 881, vMax: 90, restriction: "" },
+      { from: 881, to: 1095, vMax: 95, restriction: "Длинный перегон" },
+      { from: 1095, to: 1227, vMax: 90, restriction: "" },
+      { from: 1227, to: 1353, vMax: 90, restriction: "" },
+      { from: 1353, to: 1476, vMax: 85, restriction: "" },
+      { from: 1476, to: 1535, vMax: 80, restriction: "" },
+      { from: 1535, to: 1608, vMax: 85, restriction: "" },
+      { from: 1608, to: 1650, vMax: 70, restriction: "Подход к Шымкенту" },
+    ],
+  };
+
+  /** Координаты в user space SVG (viewBox); на экране масштабируются равномерно — без горизонтального «раздутия» в px */
+  const MAP_X0 = 120;
+  const MAP_X1 = 8080;
+  const RAIL_Y = 110;
+  const RAIL_Y1 = 104;
+  const RAIL_Y2 = 116;
+
+  const GEO_ASTANA = { lat: 51.1694, lng: 71.4491 };
+  const GEO_SHYMKENT = { lat: 42.315, lng: 69.595 };
+
+  function kmToPx(km) {
+    const t = km / ROUTE.loopKm;
+    return MAP_X0 + Math.max(0, Math.min(1, t)) * (MAP_X1 - MAP_X0);
+  }
+
+  function zoneClass(vMax) {
+    if (vMax >= 85) return "map-zone map-zone--xfast";
+    if (vMax >= 60) return "map-zone map-zone--fast";
+    if (vMax >= 45) return "map-zone map-zone--med";
+    return "map-zone map-zone--slow";
+  }
+
+  function findSegment(km) {
+    const x = ((km % ROUTE.loopKm) + ROUTE.loopKm) % ROUTE.loopKm;
+    for (let i = 0; i < ROUTE.segments.length; i++) {
+      const seg = ROUTE.segments[i];
+      if (x >= seg.from && x < seg.to) return seg;
+    }
+    return ROUTE.segments[ROUTE.segments.length - 1];
+  }
+
+  function routeLegAt(km) {
+    const S = ROUTE.settlements;
+    const x = ((km % ROUTE.loopKm) + ROUTE.loopKm) % ROUTE.loopKm;
+    for (let i = 0; i < S.length - 1; i++) {
+      if (x >= S[i].km && x < S[i + 1].km) {
+        return { from: S[i], to: S[i + 1], legKm: S[i + 1].km - S[i].km, wrap: false };
+      }
+    }
+    return {
+      from: S[S.length - 1],
+      to: S[0],
+      legKm: ROUTE.loopKm - S[S.length - 1].km,
+      wrap: true,
+    };
+  }
+
+  function geoAtKm(km) {
+    const L = ROUTE.loopKm;
+    const x = ((km % L) + L) % L;
+    const t = L <= 0 ? 0 : x / L;
+    return {
+      lat: GEO_ASTANA.lat + t * (GEO_SHYMKENT.lat - GEO_ASTANA.lat),
+      lng: GEO_ASTANA.lng + t * (GEO_SHYMKENT.lng - GEO_ASTANA.lng),
+    };
+  }
+
+  function zoneClassV(vMax) {
+    if (vMax >= 85) return "map-zone-pill--xfast";
+    if (vMax >= 60) return "map-zone-pill--fast";
+    if (vMax >= 45) return "map-zone-pill--med";
+    return "map-zone-pill--slow";
+  }
+
+  function initRouteScheme() {
+    const zones = document.getElementById("routeZones");
+    const railG = document.getElementById("routeRail");
+    const segKmG = document.getElementById("routeSegKm");
+    const restrG = document.getElementById("routeRestrictions");
+    const stations = document.getElementById("routeStations");
+    const leg = document.getElementById("mapLegend");
+    if (!zones || !railG || !segKmG || !restrG || !stations) return;
+
+    zones.textContent = "";
+    ROUTE.segments.forEach(function (seg) {
+      const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      const x0 = kmToPx(seg.from);
+      const x1 = kmToPx(seg.to);
+      r.setAttribute("x", String(x0));
+      r.setAttribute("y", "86");
+      r.setAttribute("width", String(Math.max(0.5, x1 - x0)));
+      r.setAttribute("height", "48");
+      r.setAttribute("class", zoneClass(seg.vMax));
+      zones.appendChild(r);
+    });
+
+    railG.textContent = "";
+    const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line1.setAttribute("x1", String(MAP_X0));
+    line1.setAttribute("y1", String(RAIL_Y1));
+    line1.setAttribute("x2", String(MAP_X1));
+    line1.setAttribute("y2", String(RAIL_Y1));
+    line1.setAttribute("class", "map-rail-line");
+    railG.appendChild(line1);
+    const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line2.setAttribute("x1", String(MAP_X0));
+    line2.setAttribute("y1", String(RAIL_Y2));
+    line2.setAttribute("x2", String(MAP_X1));
+    line2.setAttribute("y2", String(RAIL_Y2));
+    line2.setAttribute("class", "map-rail-line");
+    railG.appendChild(line2);
+
+    var sleeperStep = Math.max(40, Math.ceil(ROUTE.loopKm / 48));
+    for (let km = 0; km <= ROUTE.loopKm; km += sleeperStep) {
+      const x = kmToPx(km);
+      const sl = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      sl.setAttribute("x1", String(x));
+      sl.setAttribute("y1", String(RAIL_Y1 - 5));
+      sl.setAttribute("x2", String(x));
+      sl.setAttribute("y2", String(RAIL_Y2 + 5));
+      sl.setAttribute("class", km % 250 === 0 ? "map-sleeper map-sleeper--10" : "map-sleeper");
+      railG.appendChild(sl);
+    }
+
+    segKmG.textContent = "";
+    function addSegKmLabel(kmFrom, kmTo, idx) {
+      const mid = (kmFrom + kmTo) / 2;
+      const cx = kmToPx(mid);
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      t.setAttribute("x", String(cx));
+      t.setAttribute("y", String(30 + (idx % 2) * 18));
+      t.setAttribute("text-anchor", "middle");
+      t.setAttribute(
+        "class",
+        "map-seg-km" + (idx % 2 === 1 ? " map-seg-km--zoom" : "")
+      );
+      t.textContent = kmTo - kmFrom + " км";
+      segKmG.appendChild(t);
+    }
+    const S = ROUTE.settlements;
+    for (let i = 0; i < S.length - 1; i++) {
+      addSegKmLabel(S[i].km, S[i + 1].km, i);
+    }
+
+    restrG.textContent = "";
+    ROUTE.segments.forEach(function (seg, ri) {
+      if (!seg.restriction) return;
+      const w = kmToPx(seg.to) - kmToPx(seg.from);
+      if (w < 120) return;
+      const cx = (kmToPx(seg.from) + kmToPx(seg.to)) / 2;
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      t.setAttribute("x", String(cx));
+      t.setAttribute("y", String(198 + (ri % 2) * 14));
+      t.setAttribute("text-anchor", "middle");
+      t.setAttribute("class", "map-restr");
+      t.textContent = seg.restriction;
+      restrG.appendChild(t);
+    });
+
+    stations.textContent = "";
+    var nSt = ROUTE.settlements.length;
+    ROUTE.settlements.forEach(function (st, si) {
+      const x = kmToPx(st.km);
+      const nc = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      nc.setAttribute("cx", String(x));
+      nc.setAttribute("cy", String(RAIL_Y));
+      nc.setAttribute("r", st.major ? "7" : "5");
+      nc.setAttribute("class", st.major ? "map-node map-node--major" : "map-node");
+      nc.setAttribute("title", (st.title || st.name) + " · ~" + Math.round(st.km) + " км");
+      stations.appendChild(nc);
+      const up = si % 2 === 0;
+      const yName = up ? 68 : 152;
+      const yKm = up ? 84 : 168;
+      const labelAlways =
+        si === 0 || si === nSt - 1 || st.major || si % 2 === 0;
+      const vis = labelAlways ? "map-np--always" : "map-np--zoom";
+      const lab = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      lab.setAttribute("x", String(x));
+      lab.setAttribute("y", String(yName));
+      lab.setAttribute("text-anchor", "middle");
+      lab.setAttribute("class", "map-np-name " + vis);
+      lab.textContent = st.name;
+      stations.appendChild(lab);
+      const kmL = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      kmL.setAttribute("x", String(x));
+      kmL.setAttribute("y", String(yKm));
+      kmL.setAttribute("text-anchor", "middle");
+      kmL.setAttribute("class", "map-np-km " + vis);
+      kmL.textContent = Math.round(st.km) + " км";
+      stations.appendChild(kmL);
+    });
+
+    if (leg) {
+      leg.innerHTML =
+        '<span><i style="background:rgba(63,185,80,0.35)"></i> 85+ км/ч</span>' +
+        '<span><i style="background:rgba(88,166,255,0.35)"></i> 60–84</span>' +
+        '<span><i style="background:rgba(210,153,34,0.35)"></i> 45–59</span>' +
+        '<span><i style="background:rgba(248,81,73,0.28)"></i> &lt;45</span>' +
+        '<span class="map-legend-note">· узлы — НП; часть подписей и длин перегонов — при увеличении масштаба</span>';
+    }
+  }
+
+  function setupMapZoom() {
+    var svg = document.getElementById("routeSvg");
+    var rng = document.getElementById("mapZoom");
+    var pctEl = document.getElementById("mapZoomPct");
+    var btn = document.getElementById("mapZoomReset");
+    var wrap = svg ? svg.closest(".map-svg--scroll") : null;
+    if (!svg || !rng) return;
+    function apply(pct) {
+      var raw = typeof pct === "number" && !isNaN(pct) ? pct : 100;
+      var z = Math.max(100, Math.min(220, raw));
+      rng.value = String(z);
+      if (pctEl) pctEl.textContent = z + "%";
+      svg.style.width = z + "%";
+      svg.style.height = "";
+      if (wrap) wrap.classList.toggle("map-zoom-low", z < 150);
+      try {
+        localStorage.setItem("mapZoomPct", String(z));
+      } catch (_) {}
+    }
+    var saved = 100;
+    try {
+      var s = localStorage.getItem("mapZoomPct");
+      if (s != null) {
+        var p = parseInt(s, 10);
+        if (!isNaN(p)) saved = p < 100 ? 100 : p;
+      }
+    } catch (_) {}
+    apply(!isNaN(saved) ? saved : 100);
+    rng.addEventListener("input", function () {
+      apply(parseInt(rng.value, 10));
+    });
+    if (btn) {
+      btn.addEventListener("click", function () {
+        apply(100);
+      });
+    }
+  }
+
+  function initMapUI() {
+    initRouteScheme();
+    setupMapZoom();
+    var rest = document.getElementById("mapRestrictions");
+    if (rest) {
+      rest.innerHTML = ROUTE.segments
+        .map(function (seg) {
+          var z = zoneClassV(seg.vMax);
+          var note = seg.restriction ? " · " + seg.restriction : "";
+          return (
+            '<span class="map-seg-chip ' +
+            z +
+            '" data-from="' +
+            seg.from +
+            '" data-to="' +
+            seg.to +
+            '">' +
+            seg.from +
+            "–" +
+            seg.to +
+            " км · Vmax " +
+            seg.vMax +
+            note +
+            "</span>"
+          );
+        })
+        .join("");
+    }
+  }
+
+  function highlightMapSegment(km) {
+    document.querySelectorAll(".map-seg-chip").forEach(function (el) {
+      var from = parseFloat(el.getAttribute("data-from"), 10);
+      var to = parseFloat(el.getAttribute("data-to"), 10);
+      var active = km >= from && km < to;
+      el.classList.toggle("map-seg-chip--active", active);
+    });
+  }
+
+  function buildAnalyzePayload(s, mode) {
+    const alerts = (s.alerts || []).map(function (a) {
+      return (a.code ? "[" + a.code + "] " : "") + (a.text || "");
+    });
+    const hi = typeof s.health_index === "number" ? s.health_index : 0;
+    const coolant = typeof s.coolant_temp_c === "number" ? s.coolant_temp_c : 0;
+    const oilT = typeof s.engine_oil_temp_c === "number" ? s.engine_oil_temp_c : 0;
+    const factors = (s.health_top_factors || []).map(function (f) {
+      return { factor: f.factor || "", penalty: typeof f.penalty === "number" ? f.penalty : 0 };
+    });
+    return {
+      train_id: s.train_id || "",
+      timestamp: s.ts || "",
+      health_index: hi,
+      health_grade: s.health_grade || "",
+      health_top_factors: factors,
+      speed: typeof s.speed_kmh === "number" ? s.speed_kmh : 0,
+      fuel_level: typeof s.fuel_level_l === "number" ? s.fuel_level_l : 0,
+      engine_temp: coolant,
+      coolant_temp_c: coolant,
+      engine_oil_temp_c: oilT,
+      traction_motor_temp_c: Array.isArray(s.traction_motor_temp_c) ? s.traction_motor_temp_c.slice() : [],
+      brake_pressure: typeof s.brake_pipe_pressure_bar === "number" ? s.brake_pipe_pressure_bar : 0,
+      voltage: typeof s.battery_voltage_v === "number" ? s.battery_voltage_v : 0,
+      current: typeof s.traction_current_a === "number" ? s.traction_current_a : 0,
+      alerts: alerts,
+      mode: mode || undefined,
+    };
+  }
+
+  function sevKey(sev) {
+    const t = (sev || "").toLowerCase();
+    if (t === "critical" || t === "crit") return "critical";
+    if (t === "warning" || t === "warn") return "warning";
+    return "normal";
+  }
+
+  function renderAIOut(data) {
+    if (!aiPanel) return;
+    aiPanel.hidden = false;
+    const sk = sevKey(data.severity);
+    if (aiSeverity) {
+      aiSeverity.textContent =
+        sk === "critical" ? "критично" : sk === "warning" ? "внимание" : "норма";
+      aiSeverity.setAttribute("data-sev", sk);
+    }
+    if (aiSummary) aiSummary.textContent = data.summary || "—";
+
+    function fillList(ul, items) {
+      if (!ul) return;
+      ul.innerHTML = "";
+      (items || []).forEach(function (t) {
+        const li = document.createElement("li");
+        li.textContent = t;
+        ul.appendChild(li);
+      });
+      if (!items || items.length === 0) {
+        const li = document.createElement("li");
+        li.className = "muted";
+        li.textContent = "—";
+        ul.appendChild(li);
+      }
+    }
+    fillList(aiCauses, data.probable_causes);
+    fillList(aiRecs, data.recommendations);
+
+    const am = data.affected_metrics || [];
+    if (aiMetrics) {
+      aiMetrics.textContent = am.length > 0 ? "Метрики: " + am.join(", ") : "Метрики: —";
+    }
+
+    if (aiRisk) {
+      if (data.next_risk && String(data.next_risk).trim()) {
+        aiRisk.hidden = false;
+        aiRisk.textContent = "Риск далее: " + data.next_risk;
+      } else {
+        aiRisk.hidden = true;
+        aiRisk.textContent = "";
+      }
+    }
+  }
+
+  function setAILoading(loading) {
+    if (btnAIExplain) btnAIExplain.disabled = loading;
+    if (btnAIActions) btnAIActions.disabled = loading || !aiEnabled;
+    if (aiStatusLine) {
+      aiStatusLine.textContent = loading
+        ? "запрос к модели…"
+        : aiEnabled
+          ? "ИИ готов (on-demand, без каждого тика телеметрии)."
+          : "ИИ отключён: задайте GEMINI_API_KEY или OPENAI_API_KEY на сервере.";
+    }
+  }
+
+  async function runAI(mode) {
+    if (!aiEnabled) {
+      if (aiErr) {
+        aiErr.textContent = "Сервер без GEMINI_API_KEY / OPENAI_API_KEY — см. README.";
+        aiErr.hidden = false;
+      }
+      return;
+    }
+    if (!lastSample || !lastSample.ts) {
+      if (aiErr) {
+        aiErr.textContent = "Нет данных телеметрии для выбранного поезда.";
+        aiErr.hidden = false;
+      }
+      return;
+    }
+    if (aiErr) aiErr.hidden = true;
+    setAILoading(true);
+    try {
+      const res = await fetch("/api/v1/ai/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildAnalyzePayload(lastSample, mode)),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        let msg = t;
+        try {
+          const j = JSON.parse(t);
+          if (j && typeof j.error === "string" && j.error) msg = j.error;
+        } catch (_) {
+          msg = (t || "").trim() || res.statusText;
+        }
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      renderAIOut(data);
+    } catch (e) {
+      if (aiErr) {
+        aiErr.textContent = "Ошибка: " + (e && e.message ? e.message : String(e));
+        aiErr.hidden = false;
+      }
+    } finally {
+      setAILoading(false);
+    }
+  }
+
+  async function refreshAIStatus() {
+    if (!aiStatusLine) return;
+    try {
+      const res = await fetch("/api/v1/ai/status", fetchOpts());
+      if (!res.ok) throw new Error("status");
+      const j = await res.json();
+      aiEnabled = !!j.enabled;
+      aiStatusLine.textContent = aiEnabled
+        ? "ИИ готов (on-demand, без каждого тика телеметрии)."
+        : "ИИ отключён: задайте GEMINI_API_KEY или OPENAI_API_KEY на сервере.";
+      if (btnAIExplain) btnAIExplain.disabled = false;
+      if (btnAIActions) btnAIActions.disabled = !aiEnabled;
+    } catch (_) {
+      aiEnabled = false;
+      aiStatusLine.textContent = "Не удалось проверить /api/v1/ai/status";
+      if (btnAIActions) btnAIActions.disabled = true;
+    }
+  }
 
   function updateMap(s) {
-    const lat = s.lat,
-      lon = s.lon;
-    if (typeof lat === "number" && typeof lon === "number") {
-      latMin = Math.min(latMin, lat - 0.02);
-      latMax = Math.max(latMax, lat + 0.02);
-      lonMin = Math.min(lonMin, lon - 0.02);
-      lonMax = Math.max(lonMax, lon + 0.02);
-      const tLon = (lon - lonMin) / (lonMax - lonMin || 1);
-      const cx = 32 + Math.max(0, Math.min(1, tLon)) * 336;
+    const mileage = typeof s.mileage_km === "number" ? s.mileage_km : 0;
+    const km = ((mileage % ROUTE.loopKm) + ROUTE.loopKm) % ROUTE.loopKm;
+    const cx = kmToPx(km);
+    if (mapDot) {
       mapDot.setAttribute("cx", cx.toFixed(1));
-      mapCaption.textContent =
-        lat.toFixed(4) + "°, " + lon.toFixed(4) + "° · пробег " + fmt(s.mileage_km, 2) + " км";
+      mapDot.setAttribute("cy", String(RAIL_Y));
     }
+
+    const seg = findSegment(km);
+    const vMax = seg.vMax;
+    const spd = typeof s.speed_kmh === "number" ? s.speed_kmh : 0;
+    const over = spd > vMax + 2;
+
+    if (mapDot) mapDot.classList.toggle("map-dot--warn", over);
+    if (mapCaption) mapCaption.classList.toggle("map-caption--warn", over);
+
+    const g = geoAtKm(km);
+    const geo = g.lat.toFixed(5) + "°, " + g.lng.toFixed(5) + "° · ";
+    if (mapCaption) {
+      mapCaption.textContent =
+        geo +
+        "путь " +
+        km.toFixed(2) +
+        " км (цикл " +
+        ROUTE.loopKm +
+        " км) · Vmax " +
+        vMax +
+        " · ход " +
+        spd.toFixed(0) +
+        " км/ч" +
+        (over ? " — превышение!" : "");
+    }
+
+    if (mapSubcaption) {
+      const leg = routeLegAt(km);
+      let sub = leg.wrap
+        ? "между " + leg.from.name + " и " + leg.to.name + " (замыкание кольца) · " + leg.legKm + " км"
+        : "между " + leg.from.name + " и " + leg.to.name + " · " + leg.legKm + " км";
+      sub += " · Vmax " + vMax + " км/ч";
+      if (seg.restriction) sub += " · " + seg.restriction;
+      mapSubcaption.textContent = sub;
+    }
+
+    highlightMapSegment(km);
   }
 
   function clearBuffers() {
@@ -679,7 +1189,12 @@
     requestAnimationFrame(syncChartTheme);
   });
 
+  if (btnAIExplain) btnAIExplain.addEventListener("click", function () { runAI(""); });
+  if (btnAIActions) btnAIActions.addEventListener("click", function () { runAI("actions"); });
+
   document.addEventListener("DOMContentLoaded", function () {
+    initMapUI();
+    refreshAIStatus().catch(function () {});
     if (typeof Chart !== "undefined") {
       try {
         initCharts();

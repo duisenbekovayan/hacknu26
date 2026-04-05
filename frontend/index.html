@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Кабина — цифровой двойник</title>
-  <link rel="stylesheet" href="/static/styles.css?v=7" />
+  <link rel="stylesheet" href="/static/styles.css?v=14" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" defer></script>
-  <script src="/static/app.js?v=7" defer></script>
+  <script src="/static/app.js?v=14" defer></script>
 </head>
 <body>
   <div class="app">
@@ -29,6 +29,36 @@
         <span id="connPill" class="pill warn" role="status">нет связи</span>
       </div>
     </header>
+
+    <section class="card ai-block-top" aria-label="ИИ-помощник машиниста">
+      <div class="ai-head">
+        <div class="ai-head-text">
+          <h2 class="card-title">ИИ-помощник машиниста</h2>
+          <p id="aiStatusLine" class="muted small">проверка…</p>
+        </div>
+        <div class="ai-actions">
+          <button type="button" class="btn primary" id="btnAIExplain">Объяснить состояние</button>
+          <button type="button" class="btn ghost" id="btnAIActions" disabled>Что делать?</button>
+        </div>
+      </div>
+      <p id="aiErr" class="muted small" style="color: var(--bad)" hidden></p>
+      <div id="aiPanel" class="ai-panel" hidden>
+        <div id="aiSeverity" class="ai-severity" data-sev="normal">—</div>
+        <p id="aiSummary" class="ai-summary"></p>
+        <div class="ai-cols">
+          <div>
+            <p class="ai-h">Вероятные причины</p>
+            <ul id="aiCauses" class="ai-list"></ul>
+          </div>
+          <div>
+            <p class="ai-h">Рекомендации</p>
+            <ul id="aiRecs" class="ai-list"></ul>
+          </div>
+        </div>
+        <p id="aiMetrics" class="ai-metrics muted small"></p>
+        <p id="aiRisk" class="ai-risk" hidden></p>
+      </div>
+    </section>
 
     <main class="grid">
       <section class="card health" aria-labelledby="health-title">
@@ -85,21 +115,41 @@
       </section>
 
       <section class="card map-block" aria-label="Участок пути">
-        <h2 class="card-title">Участок пути <span class="muted small">(схема)</span></h2>
-        <div class="map-svg" role="img" aria-label="Схема маршрута и положение состава">
-          <svg viewBox="0 0 400 120" xmlns="http://www.w3.org/2000/svg">
+        <h2 class="card-title">Участок пути <span class="muted small">· схема · НП · ограничения</span></h2>
+        <p class="map-intro muted small">
+          Маршрут <strong>Астана-1 — Шымкент</strong> (станции по расписанию на 4–5 апр.). Километраж по пути пропорционален
+          <strong>времени в пути</strong> от отправления с Астаны; условная длина линии <strong>1650 км</strong>. Положение —
+          <code>mileage_km</code> по модулю длины; координаты — линейная интерполяция Астана → Шымкент.
+        </p>
+        <div class="map-zoom-toolbar" aria-label="Масштаб схемы">
+          <span class="muted small">Масштаб:</span>
+          <input type="range" id="mapZoom" min="100" max="220" value="100" title="Увеличение схемы от ширины карточки" />
+          <span id="mapZoomPct" class="muted small">100%</span>
+          <button type="button" class="btn ghost" id="mapZoomReset">Сброс</button>
+          <span class="muted small map-zoom-hint">100% — по ширине блока; выше — увеличение и прокрутка · вектор, без растягивания</span>
+        </div>
+        <div class="map-svg map-svg--scroll" role="img" aria-label="Схема маршрута и положение состава">
+          <svg id="routeSvg" viewBox="0 0 8200 220" preserveAspectRatio="xMinYMid meet" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <linearGradient id="rail" x1="0%" y1="0%" x2="100%" y2="0%">
+              <linearGradient id="railGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" class="stop-a" />
                 <stop offset="100%" class="stop-b" />
               </linearGradient>
             </defs>
-            <rect class="map-bg" x="0" y="0" width="400" height="120" rx="8" />
-            <line x1="32" y1="60" x2="368" y2="60" stroke="url(#rail)" stroke-width="6" stroke-linecap="round" />
-            <circle id="mapDot" cx="200" cy="60" r="10" class="map-dot" />
-            <text x="200" y="100" text-anchor="middle" class="map-caption" id="mapCaption">—</text>
+            <rect class="map-bg" x="0" y="0" width="8200" height="220" rx="10" />
+            <g id="routeZones"></g>
+            <g id="routeRail"></g>
+            <g id="routeSegKm"></g>
+            <g id="routeRestrictions"></g>
+            <g id="routeStations"></g>
+            <circle id="mapDot" cx="4100" cy="110" r="9" class="map-dot" />
           </svg>
         </div>
+        <p class="map-caption-html" id="mapCaption">—</p>
+        <p class="map-subcaption-html muted small" id="mapSubcaption"></p>
+        <p class="map-restr-title muted small">Ограничения по перегонам (Vmax, условно):</p>
+        <div class="map-restrictions" id="mapRestrictions"></div>
+        <div class="map-legend" id="mapLegend"></div>
       </section>
 
       <section class="card motors" aria-label="Тяговые двигатели">
